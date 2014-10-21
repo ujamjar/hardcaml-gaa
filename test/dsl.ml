@@ -22,4 +22,4 @@ let m = Mrl.(_module "yo"
 )
 
 let () = print_string @@ Mrl.pretty @@ m
-let () = print_string @@ Mrl.pretty Mrl.mkFIFO
+let () = print_string @@ Mrl.pretty Prims.mkFIFO

@@ -2,7 +2,7 @@ type module_defn
 type module_instance
 type read_method
 type action_method
-type variable
+type variable = string
 type rule
 type exp
 type prim_op
@@ -21,8 +21,6 @@ type scheduling_annotation =
   | C
 
 type scheduling_annotations = string array * scheduling_annotation array array
-
-type primitive_module = module_defn * scheduling_annotations
 
 val (@?) : exp -> exp -> exp
 val mux2 : exp -> exp -> exp -> exp
@@ -59,7 +57,4 @@ val when_lift_action : action -> action
 val when_lift_actions : action list -> exp option * action list
 
 val pretty : module_defn -> string
-
-val mkREG : primitive_module
-val mkFIFO : module_defn
 
