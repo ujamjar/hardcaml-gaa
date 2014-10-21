@@ -1,0 +1,7 @@
+<src/*.{ml,mli}>: package(hardcaml)
+<src>: include
+
+<test/*.{ml,mli}>: package(hardcaml)
+<test/*.byte>: package(hardcaml)
+<test>: include
+
