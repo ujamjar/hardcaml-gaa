@@ -1,4 +1,5 @@
-open Mrl
+open Mrl.Types
+open Mrl.Dsl
 
 let mkREG = 
   _module 
