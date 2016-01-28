@@ -1,0 +1,11 @@
+#directory "_build/src";;
+#use "topfind";;
+#require "ocamlgraph,hardcaml";;
+#load "HardCamlGaa.cma";;
+
+(*open Mrl;;
+open Types;;
+open Dsl;;*)
+
+open HardCamlGaa;;
+open Frl_hw;;

@@ -1,13 +1,28 @@
-all: lib
+.PHONY: clean all install uninstall 
 
-lib:
-	ocamlbuild -use-ocamlfind Gaa.cma
+BUILD_OPTS=
 
-dsl: lib
-	ocamlbuild -use-ocamlfind dsl.byte
+all: setup.data
+	ocaml setup.ml -build
+
+setup.ml:
+	oasis setup
+
+setup.data: setup.ml
+	ocaml setup.ml -configure
+
+install: all
+	ocaml setup.ml -install
+
+uninstall: 
+	ocamlfind remove hardcaml
 
 clean:
-	ocamlbuild -clean
-	-rm -f dsl.byte
-	-find . -name "*~" | xargs rm -f
+	ocaml setup.ml -clean
+	- find . -name "*~" | xargs rm
+
+distclean:
+	ocaml setup.ml -distclean
+
+
 

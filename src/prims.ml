@@ -39,7 +39,7 @@ let mkFIFO =
     ]
     ~actions:[
       amethod "enq" ~params:["x"] ~guard:(~: (rd "full0")) [
-        wr "data1" (var "x");
+        wr "data1" (var "x");      (* XXX why 'x' and not 'data0'? *)
         wr "full1" (rd "full0");
         _if ( ~: (rd "full0") ) [
           wr "data0" (var "x");

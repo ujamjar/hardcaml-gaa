@@ -1,0 +1,27 @@
+OASISFormat: 0.4
+Name:        hardcaml-gaa
+Version:     0.1
+Synopsis:    Guarded Atomic Actions for HardCaml
+Description: Guarded Atomic Actions for HardCaml
+
+Authors:     Andy Ray
+Maintainers: Andy Ray <andy.ray@ujamjar.com>
+Homepage:    https://github.com/ujamjar/hardcaml-gaa
+License:     ISC
+Plugins:     META (0.4)
+BuildTools:  ocamlbuild
+
+Library HardCamlGaa
+  Path:          src
+  Findlibname:   hardcaml-gaa
+  Pack:          true
+  Modules:       Prims, Graph_ex, Mrl, Frl, Frl_hw
+  BuildDepends:  bytes, ocamlgraph,hardcaml,hardcaml.syntax
+  XMETARequires: bytes, ocamlgraph,hardcaml
+
+SourceRepository master
+  Type:     git
+  Location: https://github.com/ujamjar/hardcaml-gaa.git
+  Browser:  https://github.com/ujamjar/hardcaml-gaa
+
+
