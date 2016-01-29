@@ -1,64 +1,3 @@
-module Types = struct
-
-  type module_defn = 
-    {
-      mdefn_name : string;
-      mdefn_prims : primitive list;
-      mdefn_rules : rule list;
-    }
-
-  and primitive = 
-    | Reg of string
-    (*| Memory of string * int*)
-    (*| Fifo ... *)
-
-  and exp = HardCaml.Signal.Comb.t
-    (*| Emethod_call of method_call (* read method *) 
-        need to insert method calls which return a wire somehow *)
-
-  and rule = 
-    {
-      rule_name : string;
-      rule_guard : exp;
-      rule_action : action list;
-    }
-
-  and action = 
-    | Reg_set of exp
-    | Mem_set of exp * exp
-
-end
-
-module Dsl = struct
-  
-  open Types
-
-  open HardCaml.Signal.Comb
-  open HardCaml.Signal.Seq
-
-  let rule rule_name ~guard rule_action = 
-    { rule_name; rule_guard=guard; rule_action }
-
-  let _module ~prims ~rules name = 
-    {
-      mdefn_name = name;
-      mdefn_prims = prims;
-      mdefn_rules = rules;
-    }
-
-  let reg name width = 
-    let d = wire width in
-    let en = wire 1 in
-    let q = reg r_sync en d in
-    object
-      method d = d
-      method en = en
-      method q = q
-      method name = name
-    end
-
-end
-
 (* A simplified GAA model
  * ======================
  *
@@ -213,7 +152,9 @@ module Schedule(S : HardCaml.Interface.S) = struct
 
   open HardCaml.Signal.Types
 
-  type rules = (string * (t S.t -> t S.t rule)) list
+  type rule_u = string * (t S.t -> t S.t rule)
+  type rule_i = string * int * t S.t rule
+  type state = t S.t * t UidMap.t
 
   module StrSet = Set.Make(String)
   module StrMap = Map.Make(String)
@@ -227,10 +168,10 @@ module Schedule(S : HardCaml.Interface.S) = struct
    * XXX we recompute various domains for different functions.
    *     should really store them in a (lazy?) table *)
 
-  let rec domain_of_expr state set expr = 
+  let rec domain_of_expr (x,state) set expr = 
     match UidMap.find (uid expr) state with
     | exception _ -> 
-      List.fold_left (domain_of_expr state) set (deps expr)
+      List.fold_left (domain_of_expr (x,state)) set (deps expr)
     | _ -> 
       UidSet.add (uid expr) set
 
@@ -244,7 +185,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
       (domain_of_guard state rule)
       (domain_of_action state rule)
 
-  let range state rule = 
+  let range (state,_) rule = 
     let add_to_range set (w,a) =
       if a = Signal_empty then set
       else UidSet.add (uid w) set
@@ -254,22 +195,22 @@ module Schedule(S : HardCaml.Interface.S) = struct
 
   let empty_inter s0 s1 = UidSet.(is_empty @@ inter s0 s1) 
 
-  let conflict_free (state,state_map) r1 r2 = 
-    let domain_r1, domain_r2 = domain state_map r1, domain state_map r2 in
+  let conflict_free state r1 r2 = 
+    let domain_r1, domain_r2 = domain state r1, domain state r2 in
     let range_r1, range_r2 = range state r1, range state r2 in
     empty_inter domain_r1 range_r2 &&
     empty_inter domain_r2 range_r1 &&
     empty_inter range_r1 range_r2 
 
-  let mutually_exclusive (state,state_map) r1 r2 = 
+  let mutually_exclusive state r1 r2 = 
     (* XXX options
       * - use a sat solver!
       * - simple analysis based on conjunction of top level literals 
       * - user guided annotations *)
     false
 
-  let sequentially_composable (state,state_map) r1 r2 = 
-    empty_inter (domain state_map r2) (range state r1)
+  let sequentially_composable state r1 r2 = 
+    empty_inter (domain state r2) (range state r1)
 
   type constraints = 
     {
@@ -295,7 +236,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
    * generating the feeback arc set (see Eades algorithm) it should cover all
    * we need *)
 
-  let instantiate_rules rules = 
+  let instantiate_rules rules =
     check_rule_names_unique rules;
     let state = state () in
     let rules = List.mapi (fun i (n,r) -> n, i, r (fst state)) rules in
@@ -304,10 +245,10 @@ module Schedule(S : HardCaml.Interface.S) = struct
   let print_uid_set s = 
     List.iter (Printf.printf "%Li ") (UidSet.elements s)
 
-  let show_rule_dr (st,stm) (n,i,r) = 
+  let show_rule_dr st (n,i,r) = 
     let open Printf in
     printf "%s[%i] d={ " n i;
-    print_uid_set (domain stm r);
+    print_uid_set (domain st r);
     printf "} r={ ";
     print_uid_set (range st r);
     printf "}\n"
@@ -334,7 +275,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
       end) edges;
     fun vertex -> e.(vertex)
 
-  let build_constraints (rules : rules) = 
+  let build_constraints rules =
     (* build rules over (new) state *)
     let state, rules = instantiate_rules rules in
     List.iter (show_rule_dr state) rules;
@@ -356,10 +297,6 @@ module Schedule(S : HardCaml.Interface.S) = struct
     in
     Array.of_list rules, constraints
 
-  module INT = struct type t = int let compare = compare end
-  module IntSet = Set.Make(INT)
-  module IntMap = Map.Make(INT)
-
   let conflict_graph rules constraints = 
     let g = Array.fold_left (fun g (_,n,_) -> G.add_vertex g n) G.empty rules in
     let g = 
@@ -369,68 +306,27 @@ module Schedule(S : HardCaml.Interface.S) = struct
     gviz "conflict.dot" g;
     Connected.components_list g
 
+  let asserted_bits size idx = 
+    let rec f n = 
+      if n=size then []
+      else if (idx land (1 lsl n)) <> 0 then n :: f (n+1)
+      else f (n+1)
+    in
+    f 0
+
   let enumerated_encoder rules group constraints =
-    let rules = Array.of_list rules in
     let n_rules = Array.length rules in
-    let asserted_bits i =
-      let asserted j = if ((1 lsl j) land i) <> 0 then j else -1 in
-      Array.init n_rules asserted
-      |> Array.to_list |> List.filter ((<>)(-1))
-    in
-    Array.init (1 lsl n_rules) (fun i ->
-      (* get bits asserted at this index *)
-      let vertices = asserted_bits i in
-      (*let out_edges = build_undirected_graph (List.length vertices) 
-        (fun c -> 
-      *)
-      0)
+    Array.init (1 lsl n_rules) (asserted_bits n_rules)
 
-(*
-  module Graph = struct
-    let neighbors a b = a
-    let is_connected a b p = true
-    let vertices _ = failwith ""
-  end
+end
 
-  let fold_maximal_cliques f g accu =
-    let rec extend clique cands nots accu =
-      (* returns the accumulator ACCU plus all maximal cliques C that
-      are supersets of CLIQUE, disjoint from NOTS, and subset of CANDS
-      union CLIQUE.  *)
-      let intersection_size a b = IntSet.cardinal (IntSet.inter a b) in
-      if IntSet.is_empty cands then
-        if IntSet.is_empty nots then f accu clique
-        else accu
-      else
-        let pivot, _ =
-          IntSet.fold
-            (fun u (pivot, pivot_score) ->
-              let score = intersection_size (Graph.neighbors g u) cands in
-              if score > pivot_score then (u, score)
-              else (pivot, pivot_score))
-            (IntSet.union cands nots)
-            (-1, -1) 
-        in
-        let _, _, accu =
-          IntSet.fold
-            (fun u ((cands, nots, accu) as state) ->
-              if Graph.is_connected g u pivot then state
-              else
-                let cands = IntSet.remove u cands in
-                let clique' = IntSet.add u clique in
-                let u_neighbors = Graph.neighbors g u in
-                let cands' = IntSet.inter cands u_neighbors in
-                let nots' = IntSet.inter nots u_neighbors in
-                let accu = extend clique' cands' nots' accu in
-                let nots = IntSet.add u nots in
-                  (cands, nots, accu))
-            cands
-            (cands, nots, accu)
-        in
-        accu
-    in
-    extend IntSet.empty (Graph.vertices g) IntSet.empty accu
-*)
+module type Example = sig
+  module S : HardCaml.Interface.S
+  val rules : (string * (t S.t -> t S.t rule)) list 
+end
+module type Examples = sig
+  include Example
+  val rules : (string * (t S.t -> t S.t rule)) list array
 end
 
 module Gcd = struct
@@ -534,6 +430,8 @@ module Test = struct
         action = { na with a = s.c }
       });
     ]
+
+  let rules = [| rules0; rules1; rules2; rules3 |]
 
 end
 
