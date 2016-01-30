@@ -59,7 +59,7 @@ module Make(G : Gaa) = struct
     S.cycle sim;
     clear := B.gnd;
     enable := B.vdd;
-    while !running = B.gnd do
+    for i=0 to n-1 do
       S.cycle sim
     done;
     S.cycle sim

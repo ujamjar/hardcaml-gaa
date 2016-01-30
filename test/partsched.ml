@@ -49,7 +49,7 @@ module PartSched = struct
   let r_spec = { Signal.Seq.r_sync with Signal.Types.reg_enable = enable }
 
   (* state register initial values *)
-  let clear = S.(map (fun (_,b) -> zero b) t)
+  let clear _ = S.(map (fun (_,b) -> zero b) t)
   let output _ s = s
 end
 

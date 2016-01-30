@@ -149,6 +149,11 @@ type 'a rule =
 
 module Schedule(S : HardCaml.Interface.S) = struct
 
+  let (--) s n = 
+    let w = wire (width s) in
+    w <== s;
+    w -- n
+
   open HardCaml.Signal.Types
 
   type rule_u = string * (t S.t -> t S.t rule)
@@ -369,7 +374,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
       | [(a,b);(c,d)] -> (a @ List.map (fun c -> c &: ~: b) c), b |: d 
       | _ -> failwith "bad pri tree"
     in
-    fst @@ tree 2 pri2 (pri1 x)
+    try fst @@ tree 2 pri2 (pri1 x) with _ -> failwith "pri_en_tree"
 
   let rule_enables rules sched = 
     let get_enables gr = 
@@ -386,11 +391,13 @@ module Schedule(S : HardCaml.Interface.S) = struct
           List.map2 (fun idx en -> idx,en) gr en)
       sched
 
-  let pri_mux = 
-    tree 2 
-      (function [e,a] -> e, a
-              | [(e1,a1);(e2,a2)] -> e1 |: e2, mux2 e1 a1 a2
-              | _ -> failwith "bad pri_mux tree")
+  let pri_mux l = 
+    try
+      tree 2 
+        (function [e,a] -> e, a
+                | [(e1,a1);(e2,a2)] -> e1 |: e2, mux2 e1 a1 a2
+                | _ -> failwith "bad pri_mux tree") l
+    with _ -> failwith "pri_mux"
 
   let sort_guards guards = 
     Array.of_list @@ List.sort (fun a b -> compare (fst a) (fst b)) @@ List.concat guards 
@@ -419,9 +426,11 @@ module Schedule(S : HardCaml.Interface.S) = struct
       let st = S.(map2 (fun s t -> s,t) st_mux st_clear) in
       S.(map2 
         (fun (n,b) (st,stc) -> 
-          let e, a = pri_mux st in
-          let r_spec = { r_spec with reg_clear_value=stc; reg_reset_value=stc } in
-          HardCaml.Signal.Seq.(reg r_spec e a) -- n) t st) 
+          if st=[] then stc 
+          else
+            let e, a = pri_mux st in
+            let r_spec = { r_spec with reg_clear_value=stc; reg_reset_value=stc } in
+            HardCaml.Signal.Seq.(reg r_spec e a) -- n) t st) 
     in
 
     ignore @@ S.(map2 (<==) state st_reg);
