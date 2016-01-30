@@ -49,26 +49,38 @@ module Schedule(S : HardCaml.Interface.S) : sig
 
   val instantiate_rules : rule_u list -> state * rule_i list
 
-  val build_constraints : rule_u list -> rule_i array * constraints list
+  val build_constraints : rule_u list -> state * rule_i array * constraints list
 
   val conflict_graph : rule_i array -> constraints list -> int list list
 
   val asserted_bits : int -> int -> int list
 
-  val enumerated_encoder : rule_i array -> int list -> constraints list -> int list array
+  type encoder = [ `priority of int list | `enum of int list * int list array ]
+
+  val enumerated_encoder : rule_i array -> constraints list -> int list -> encoder 
+
+  val compile_cf : register -> t S.t -> rule_u list -> t S.t * t
 
 end
 
-module type Example = sig
+module type Gaa = sig
+  module I : HardCaml.Interface.S
+  module O : HardCaml.Interface.S
   module S : HardCaml.Interface.S
-  val rules : (string * (t S.t -> t S.t rule)) list 
-end
-module type Examples = sig
-  include Example
-  val rules : (string * (t S.t -> t S.t rule)) list array
+  val r_spec : HardCaml.Signal.Types.register
+  val clear : t I.t -> t S.t
+  val output : t I.t -> t S.t -> t O.t
 end
 
-module Gcd : Example
-module Test : Examples
-module PartSched : Example
+module Gaa(G : Gaa) : sig
+  module Sched : module type of Schedule(G.S)
+  module I : HardCaml.Interface.S
+  module O : HardCaml.Interface.S
+
+  val f_en : (t G.I.t -> Sched.rule_u list) -> t G.I.t -> t G.O.t * t
+  val circuit_en : string -> (t G.I.t -> Sched.rule_u list) -> HardCaml.Circuit.t
+
+  val f : (t G.I.t -> Sched.rule_u list) -> t G.I.t -> t G.O.t
+  val circuit : string -> (t G.I.t -> Sched.rule_u list) -> HardCaml.Circuit.t
+end
 

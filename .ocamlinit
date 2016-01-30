@@ -1,6 +1,7 @@
 #directory "_build/src";;
 #use "topfind";;
-#require "ocamlgraph,hardcaml";;
+#camlp4o;;
+#require "ocamlgraph,hardcaml.syntax,hardcaml-waveterm.lterm";;
 #load "HardCamlGaa.cma";;
 
 (*open Mrl;;

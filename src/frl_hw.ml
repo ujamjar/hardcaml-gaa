@@ -102,13 +102,9 @@
  * Note; with FIFOs and arrays there are undefined cases
  * which exclude SC.
  *
- * CF scheduler
- * ============
- *
- * 
- *
  *)
 
+open Printf
 open HardCaml.Signal.Comb
 
 (* ocamlgraph modules *)
@@ -136,6 +132,9 @@ module Gviz = Graph.Graphviz.Dot(struct
   let edge_attributes _ = [ ]
   let get_subgraph _ = None
 end)
+
+module Int = struct type t = int let compare = compare end
+module IntSet = Set.Make(Int)
 
 let gviz fname g = 
   let f = open_out fname in
@@ -232,10 +231,6 @@ module Schedule(S : HardCaml.Interface.S) = struct
       failwith "rule names must be unique"
     end
 
-  (* switch these hacked up graph algorithms over to ocamlgraph.  Apart from
-   * generating the feeback arc set (see Eades algorithm) it should cover all
-   * we need *)
-
   let instantiate_rules rules =
     check_rule_names_unique rules;
     let state = state () in
@@ -243,10 +238,9 @@ module Schedule(S : HardCaml.Interface.S) = struct
     state, rules
 
   let print_uid_set s = 
-    List.iter (Printf.printf "%Li ") (UidSet.elements s)
+    List.iter (printf "%Li ") (UidSet.elements s)
 
   let show_rule_dr st (n,i,r) = 
-    let open Printf in
     printf "%s[%i] d={ " n i;
     print_uid_set (domain st r);
     printf "} r={ ";
@@ -254,7 +248,6 @@ module Schedule(S : HardCaml.Interface.S) = struct
     printf "}\n"
 
   let show_rule_constraints (n1,i1,r1) (n2,i2,r2) cf me sc12 sc21 = 
-    let open Printf in
     let b = function true -> "\xe2\x9c\x93" | false -> "\xe2\x9c\x97" in
     printf "%s[%i] <-> %s[%i] " n1 i1 n2 i2;
     printf "cf=%s me=%s sc12=%s sc21=%s\n" 
@@ -263,17 +256,6 @@ module Schedule(S : HardCaml.Interface.S) = struct
   let pairs l = 
     let rec pairs = function [] -> [] | h::t -> (List.map (fun t -> h,t) t) :: pairs t in
     List.concat (pairs l) 
-
-  let build_undirected_graph n_vertices f edges = 
-    let e = Array.init n_vertices (fun _ -> []) in
-    List.iter (fun c ->
-      match f c with
-      | None -> ()
-      | Some(i1,i2) -> begin
-        e.(i1) <- i2 :: e.(i1);
-        e.(i2) <- i1 :: e.(i2)
-      end) edges;
-    fun vertex -> e.(vertex)
 
   let build_constraints rules =
     (* build rules over (new) state *)
@@ -295,16 +277,22 @@ module Schedule(S : HardCaml.Interface.S) = struct
             cf; me; sc12; sc21;
           }) pairs
     in
-    Array.of_list rules, constraints
+    state, Array.of_list rules, constraints
+
+  let is_cf_or_me c = c.cf || c.me
+  let not_cf_or_me c = not (is_cf_or_me c)
+
+  let build_graph ?show rules constraints f = 
+    let g = Array.fold_left (fun g (_,n,_) -> G.add_vertex g n) G.empty rules in
+    let g = List.fold_left (fun g c -> if f c then G.add_edge g c.i1 c.i2 else g) g constraints in
+    (match show with None -> () | Some(fname) -> gviz fname g);
+    g
 
   let conflict_graph rules constraints = 
-    let g = Array.fold_left (fun g (_,n,_) -> G.add_vertex g n) G.empty rules in
-    let g = 
-      let add_cf g c = if c.cf || c.me then g else G.add_edge g c.i1 c.i2 in
-      List.fold_left add_cf g constraints 
-    in
-    gviz "conflict.dot" g;
-    Connected.components_list g
+    let g = build_graph ~show:"conflict.dot" rules constraints not_cf_or_me in
+    Connected.components_list g |> List.map (List.sort compare)
+
+  type encoder = [ `priority of int list | `enum of int list * int list array ]
 
   let asserted_bits size idx = 
     let rec f n = 
@@ -314,169 +302,175 @@ module Schedule(S : HardCaml.Interface.S) = struct
     in
     f 0
 
-  let enumerated_encoder rules group constraints =
-    let n_rules = Array.length rules in
-    Array.init (1 lsl n_rules) (asserted_bits n_rules)
-
-end
-
-module type Example = sig
-  module S : HardCaml.Interface.S
-  val rules : (string * (t S.t -> t S.t rule)) list 
-end
-module type Examples = sig
-  include Example
-  val rules : (string * (t S.t -> t S.t rule)) list array
-end
-
-module Gcd = struct
-          
-  module S = interface x[8] y[8] end
-
-  let na = S.(map (fun _ -> empty) t)
-
-  let rules = 
-    let open S in
-    [
-      "sub", (fun s -> {
-        guard  = ((s.x >=: s.y) &: (s.y <>:. 0));
-        action = { na with x = (s.x -: s.y) };
-      });
-          
-      "swap", (fun s -> {
-        guard  = ((s.x <: s.y) &: (s.y <>:. 0));
-        action = { x = s.y; y = s.x };
-      });
-    ]
-
-end
-
-module Test = struct
-
-  (* hand craft a few rules to test CF/SC *)
-
-  module S = interface
-    a[1] b[1] c[1] d[1]
-  end
-  let na = S.(map (fun _ -> empty) t)
-
-  (* trivially CF and SC - rules do not access any shared state *)
-  let rules0 = 
-    let open S in
-    [
-      "a", (fun s -> {
-        guard = s.a ==: s.b;
-        action = { na with a = s.b; b = s.a };
-      });
-      "b", (fun s -> {
-        guard = s.c ==: s.d;
-        action = { na with c = s.d; d = s.c };
-      });
-    ]
-
-  (* CF neither rules reads the state the other writes *)
-  let rules1 = 
-    let open S in
-    [
-      "a", (fun s -> {
-        guard = s.a |: s.d;
-        action = { na with a = s.c }
-      });
-      "b", (fun s -> {
-        guard = s.b |: s.d;
-        action = { na with b = s.c }
-      });
-    ]
-
-  (* Not CF - both rules write state a, though neither reads it.
-   * SC both ways *)
-  let rules2 = 
-    let open S in
-    [
-      "a", (fun s -> {
-        guard = s.d;
-        action = { na with a = s.c }
-      });
-      "b", (fun s -> {
-        guard = s.b;
-        action = { na with a = s.c }
-      });
-    ]
-
-  (* SC a->b *)
-  let rules3 = 
-    let open S in
-    [
-      "a", (fun s -> { (* d=b,c,d r=a *)
-        guard = s.d |: s.b;
-        action = { na with a = s.c }
-      });
-      "b", (fun s -> { (* d=b,c,d r=a,b *)
-        guard = s.b;
-        action = { na with a = s.c; b = s.d }
-      });
-    ]
-
-  (* SC b->a *)
-  let rules4 = 
-    let open S in
-    [
-      "a", (fun s -> {
-        guard = s.b;
-        action = { na with a = s.c; b = s.d }
-      });
-      "b", (fun s -> { 
-        guard = s.d |: s.b;
-        action = { na with a = s.c }
-      });
-    ]
-
-  let rules = [| rules0; rules1; rules2; rules3 |]
-
-end
-
-module PartSched = struct
-
-
-  module S = interface
-    t{|6|}[1]
-  end
-
-  let cfp = [ (* pairs of conflict free rules *)
-    1,2; 1,3; 1,5; 1,6;
-    2,3; 2,4; 2,6;
-    3,4; 3,5; 3,6;
-    4,5;
-    5,6
-  ]
-  let is_cf i j = 
-    if i<j then List.mem (i,j) cfp
-    else List.mem (j,i) cfp
-
-  let rules = 
-    let open S in
-    let cf i = 
-      fun (s : HardCaml.Signal.Comb.t S.t) -> { 
-        guard = vdd;
-        action = {
-          t = Array.init 6 (fun j -> 
-          if i=(j+1) then 
-            reduce (|:) 
-            (Array.to_list @@ Array.init 6 (fun j ->
-              if is_cf i (j+1) then vdd else s.t.(j)))
-          else empty)
-        }
-      }
+  let max_clique g =
+    (* find largest clique.  Break ties with lowest enabled index *)
+    let m = Clique.maximalcliques g in
+    let rec minl x = function [] -> x | h::t -> minl (min x h) t in 
+    let m = List.map (fun m -> (List.length m, minl (-1) m), m) m in
+    let cmp ((size1,min1),_) ((size2,min2),_) = 
+      let c = - (compare size1 size2) in
+      if c=0 then compare min1 min2 else c
     in
-    [
-      "t1", cf 1;
-      "t2", cf 2;
-      "t3", cf 3;
-      "t4", cf 4;
-      "t5", cf 5;
-      "t6", cf 6;
-    ]
+    let m = List.sort cmp m in
+    assert (List.length m > 0);
+    snd (List.hd m)
+
+  let enumerated_encoder rules constraints group =
+    (* get rules and constraints in group *)
+    let get_group rules constraints group = 
+      let rules = List.map (Array.get rules) group in
+      let set = List.fold_left (fun s (_,i,_) -> IntSet.add i s) IntSet.empty rules in
+      let constraints =
+        let cond c = IntSet.mem c.i1 set && IntSet.mem c.i2 set && is_cf_or_me c in
+        List.filter cond constraints 
+      in
+      Array.of_list rules, constraints
+    in
+    (* focus on this scheduling group *)
+    let rules, constraints = get_group rules constraints group in 
+    let n_rules = Array.length rules in
+    if constraints = [] then `priority group
+    else 
+      (* find cliques *)
+      `enum (group, 
+        Array.init (1 lsl n_rules) 
+          (fun i ->
+            (* enabled subgroup *)
+            let group = asserted_bits n_rules i in
+            let rules, constraints = get_group rules constraints group in
+            let g = build_graph rules constraints (fun _ -> true) in
+            max_clique g))
+
+  let const_of_clique gr cl = 
+    let module B = HardCaml.Bits.Comb.IntbitsList in
+    let size = List.length gr in
+    constibl @@ 
+      B.(reduce (|:) @@ 
+        List.mapi (fun i idx -> if List.mem idx cl then sll (one size) i else zero size) gr)
+   
+  let pri_en = 
+    let rec pri set = function
+      | [] -> []
+      | h::t -> 
+        let b = h &: (~: set) in
+        b :: pri b t
+    in
+    pri gnd
+
+  let pri_en_tree x =  
+    let rec pri1 = function 
+      | [] -> [] 
+      | [a] -> [[a],a] | a::b::t -> 
+        let a,b = a, (b &: (~: a)) in 
+        ([a;b],(a|:b)) :: pri1 t 
+    in
+    let pri2 = function 
+      | [a] -> a 
+      | [(a,b);(c,d)] -> (a @ List.map (fun c -> c &: ~: b) c), b |: d 
+      | _ -> failwith "bad pri tree"
+    in
+    fst @@ tree 2 pri2 (pri1 x)
+
+  let rule_enables rules sched = 
+    let get_enables gr = 
+      List.map (fun i -> let n,_,r = Array.get rules i in r.guard -- ("__"^n^"_g")) gr 
+    in
+    List.map
+      (fun s ->
+        match s with
+        | `priority gr -> List.map2 (fun idx en -> idx,en) gr (pri_en_tree @@ get_enables gr)
+        | `enum (gr,cl) -> 
+          let sel = concat @@ List.rev @@ get_enables gr in
+          let data = List.map (const_of_clique gr) @@ Array.to_list cl in
+          let en = List.rev @@ bits @@ mux sel data in
+          List.map2 (fun idx en -> idx,en) gr en)
+      sched
+
+  let pri_mux = 
+    tree 2 
+      (function [e,a] -> e, a
+              | [(e1,a1);(e2,a2)] -> e1 |: e2, mux2 e1 a1 a2
+              | _ -> failwith "bad pri_mux tree")
+
+  let sort_guards guards = 
+    Array.of_list @@ List.sort (fun a b -> compare (fst a) (fst b)) @@ List.concat guards 
+
+  let create_register_state r_spec st_clear (state,_) rules guards = 
+    let guards = sort_guards guards in
+    let rules = Array.init (Array.length rules) 
+      (fun i -> 
+        let n,j,r = rules.(i) in
+        let k,e = guards.(i) in
+        assert (i=j);
+        assert (j=k);
+        n, r, e -- ("__"^n^"_e"))
+    in
+    let any_enabled = reduce (|:) @@ Array.to_list @@ Array.map (fun (_,_,e) -> e) rules in
+
+    let merge_st st a e = 
+      S.(map2 (fun st a -> if a = Signal_empty then st else (e,a)::st) st a)
+    in
+    let st_mux = 
+      Array.fold_left (fun st (n,r,e) -> merge_st st r.action e) 
+        S.(map (fun _ -> []) t)
+        rules
+    in
+    let st_reg = 
+      let st = S.(map2 (fun s t -> s,t) st_mux st_clear) in
+      S.(map2 
+        (fun (n,b) (st,stc) -> 
+          let e, a = pri_mux st in
+          let r_spec = { r_spec with reg_clear_value=stc; reg_reset_value=stc } in
+          HardCaml.Signal.Seq.(reg r_spec e a) -- n) t st) 
+    in
+
+    ignore @@ S.(map2 (<==) state st_reg);
+    st_reg, any_enabled
+
+  let compile_cf r_spec st_clear rules = 
+    let state, rules, constraints = build_constraints rules in
+    let scheduling_groups = conflict_graph rules constraints in
+    let scheduling_encoders = List.map (enumerated_encoder rules constraints) scheduling_groups in
+    let guards = rule_enables rules scheduling_encoders in
+    let regs = create_register_state r_spec st_clear state rules guards in
+    regs
 
 end
 
+module type Gaa = sig
+  module I : HardCaml.Interface.S
+  module O : HardCaml.Interface.S
+  module S : HardCaml.Interface.S
+  val r_spec : HardCaml.Signal.Types.register
+  val clear : t I.t -> t S.t
+  val output : t I.t -> t S.t -> t O.t
+end
+
+module Gaa(G : Gaa) = struct
+
+  module Sched = Schedule(G.S)
+  module I = G.I
+  module O = G.O
+  
+  let running_name = "__gaa_running"
+
+  let f_en rules i = 
+    let s,en = Sched.compile_cf G.r_spec (G.clear i) (rules i) in
+    G.output i s, output running_name en
+
+  let f rules i = fst (f_en rules i)
+
+  let circuit name rules = 
+    let i = G.I.(map (fun (n,b) -> input n b) t) in
+    let o = f rules i in
+    let o = G.O.(to_list @@ map2 (fun (n,b) o -> output n o) t o) in
+    HardCaml.Circuit.make name o
+
+  let circuit_en name rules = 
+    let i = G.I.(map (fun (n,b) -> input n b) t) in
+    let o,en = f_en rules i in
+    let o = G.O.(to_list @@ map2 (fun (n,b) o -> output n o) t o) in
+    HardCaml.Circuit.make name (output running_name en :: o)
+
+end
 
