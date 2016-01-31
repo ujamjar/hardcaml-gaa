@@ -61,4 +61,30 @@ module FIFO = struct
 end
 
 module X = Make(FIFO)
+module S = Cyclesim.Api
+
+let () = X.sim (fun ~sim ~clear ~enable ~running ~i ~o ->
+  let open FIFO.I in
+  S.reset sim;
+  enable := B.vdd;
+  clear := B.vdd;
+  S.cycle sim;
+  clear := B.gnd;
+  
+  i.enq := B.vdd;
+  i.enq_x := B.consti 8 3;
+  S.cycle sim;
+
+  i.enq := B.vdd;
+  i.enq_x := B.consti 8 4;
+  S.cycle sim;
+
+  i.enq := B.gnd;
+  i.deq := B.vdd;
+  S.cycle sim;
+  S.cycle sim;
+  i.deq := B.gnd;
+  S.cycle sim;
+  S.cycle sim;
+)
 
