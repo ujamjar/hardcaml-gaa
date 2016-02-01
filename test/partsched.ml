@@ -51,6 +51,8 @@ module PartSched = struct
   (* state register initial values *)
   let clear _ = S.(map (fun (_,b) -> zero b) t)
   let output _ s = s
+  let sched_opt = [ `cf; `me; `sc ]
+  let me_rules = [ ]
 end
 
 module X = Make(PartSched)

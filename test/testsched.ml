@@ -3,7 +3,7 @@
 (* hand craft a few rules to test CF/SC *)
 module TestSched = struct
 
-  let name = "partsched"
+  let name = "testsched"
 
   module I = interface end
   module S = interface
@@ -15,6 +15,8 @@ module TestSched = struct
   let r_spec = { Signal.Seq.r_sync with Signal.Types.reg_enable = enable }
   let clear _ = S.(map (fun (_,b) -> zero b) t)
   let output _ s = s
+  let sched_opt = [ `cf; `me; `sc ]
+  let me_rules = [ ]
 end
 
 module TestSched0 = struct

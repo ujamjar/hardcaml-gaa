@@ -41,6 +41,16 @@ module Gcd = struct
   (* construct output *)
   let output i s = O.{ result = s.S.x }
 
+  (* rule parallelism to find *)
+  let sched_opt = [ `cf; `me; `sc ]
+
+  (* mutually exclusive rules *)
+  let me_rules = [ ["swap"; "sub" ] ]
+
+  (* NOTE: By annotating these rules as 'me' we dont improve throughput
+   * (it will still take the same number of cycles) but we do put them in
+   * seperate shceduling groups which removes the priority encoder *)
+
 end
 
 (* TESTBENCH *)

@@ -31,6 +31,8 @@ module Smul = struct
 
   let output i s = O.{ product = s.S.product }
 
+  let sched_opt = [ `cf; `me; `sc ]
+  let me_rules = [ ]
 end
 
 module X = Make(Smul)

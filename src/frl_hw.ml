@@ -199,6 +199,20 @@ type 'a rule =
     action : 'a;
   }
 
+type constraints = 
+  {
+    (* edge *)
+    i1 : int;
+    i2 : int;
+    (* constraints *)
+    cf : bool;
+    me : bool;
+    sc12 : bool;
+    sc21 : bool;
+  }
+
+type sched_opt = [ `cf | `me | `sc ]
+
 module Schedule(S : HardCaml.Interface.S) = struct
 
   let (--) s n = 
@@ -258,27 +272,18 @@ module Schedule(S : HardCaml.Interface.S) = struct
     empty_inter domain_r2 range_r1 &&
     empty_inter range_r1 range_r2 
 
-  let mutually_exclusive state r1 r2 = 
-    (* XXX options
-      * - use a sat solver!
-      * - simple analysis based on conjunction of top level literals 
-      * - user guided annotations *)
-    false
+  let mutually_exclusive me_rules state r1 r2 = 
+    let is_user_me (n1,_) (n2,_) = 
+      List.fold_left 
+        (fun b me ->
+          b || (StrSet.mem n1 me && StrSet.mem n2 me)) false me_rules
+    in
+    (* XXX scan top level conjunctions *)
+    (* XXX check with sat solver *)
+    is_user_me r1 r2
 
   let sequentially_composable state r1 r2 = 
     empty_inter (domain state r2) (range state r1)
-
-  type constraints = 
-    {
-      (* edge *)
-      i1 : int;
-      i2 : int;
-      (* constraints *)
-      cf : bool;
-      me : bool;
-      sc12 : bool;
-      sc21 : bool;
-    }
 
   (* XXX could mangle the names, but we'll address this properly when we 
    * consider module hierarchies *)
@@ -314,7 +319,13 @@ module Schedule(S : HardCaml.Interface.S) = struct
     let rec pairs = function [] -> [] | h::t -> (List.map (fun t -> h,t) t) :: pairs t in
     List.concat (pairs l) 
 
-  let build_constraints rules =
+  let build_constraints ~sched_opt ~me_rules rules =
+    (* sets of mutually exclusive rules *)
+    let me_rules = List.map StrSet.of_list me_rules in
+    (* enabled analysis *)
+    let calc_me, calc_cf, calc_sc = 
+      List.mem `me sched_opt, List.mem `cf sched_opt, List.mem `sc sched_opt 
+    in
     (* build rules over (new) state *)
     let state, rules = instantiate_rules rules in
     List.iter (show_rule_dr state) rules;
@@ -324,10 +335,10 @@ module Schedule(S : HardCaml.Interface.S) = struct
     let constraints = 
       List.map 
         (fun ((n1,i1,r1),(n2,i2,r2)) ->
-          let cf = conflict_free state r1 r2 in
-          let me = mutually_exclusive state r1 r2 in
-          let sc12 = sequentially_composable state r1 r2 in (* XXX if cf? *)
-          let sc21 = sequentially_composable state r2 r1 in
+          let me = calc_me && mutually_exclusive me_rules state (n1,r1) (n2,r2) in
+          let cf = me || (calc_cf && conflict_free state r1 r2) in
+          let sc12 = cf || (calc_sc && sequentially_composable state r1 r2) in 
+          let sc21 = cf || (calc_sc && sequentially_composable state r2 r1) in
           show_rule_constraints (n1,i1,r1) (n2,i2,r2) cf me sc12 sc21;
           {
             i1; i2; (* i1 < i2 *)
@@ -336,8 +347,8 @@ module Schedule(S : HardCaml.Interface.S) = struct
     in
     state, Array.of_list rules, constraints
 
-  let is_cf_or_me c = c.cf || c.me
-  let not_cf_or_me c = not (is_cf_or_me c)
+  let is_parallel c = c.cf || c.me || c.sc21
+  let not_parallel c = not (is_parallel c)
 
   let build_graph ?show rules constraints f = 
     let g = Array.fold_left (fun g (_,n,_) -> G.add_vertex g n) G.empty rules in
@@ -346,7 +357,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
     g
 
   let conflict_graph rules constraints = 
-    let g = build_graph ~show:"conflict.dot" rules constraints not_cf_or_me in
+    let g = build_graph ~show:"conflict.dot" rules constraints not_parallel in
     Connected.components_list g |> List.map (List.sort compare)
 
   type encoder = [ `priority of int list | `enum of int list * int list array ]
@@ -359,15 +370,21 @@ module Schedule(S : HardCaml.Interface.S) = struct
     in
     f 0
 
-  let max_clique g =
-    (* find largest clique.  Break ties with lowest enabled index *)
+  (* find largest clique.  Break ties with lowest enabled index *)
+  let cmp_clique_largest ((size1,min1),_) ((size2,min2),_) = 
+    let c = - (compare size1 size2) in
+    if c=0 then compare min1 min2 else c
+
+  (* find largest clique which includes lowest enabled index *)
+  let cmp_clique_pri ((size1,min1),_) ((size2,min2),_) = 
+    let c = compare min1 min2 in
+    if c=0 then - (compare size1 size2) else c
+
+  (* XXX do a bit more testing on this *)
+  let max_clique cmp g =
     let m = Clique.maximalcliques g in
     let rec minl x = function [] -> x | h::t -> minl (min x h) t in 
     let m = List.map (fun m -> (List.length m, minl (-1) m), m) m in
-    let cmp ((size1,min1),_) ((size2,min2),_) = 
-      let c = - (compare size1 size2) in
-      if c=0 then compare min1 min2 else c
-    in
     let m = List.sort cmp m in
     assert (List.length m > 0);
     snd (List.hd m)
@@ -378,7 +395,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
       let rules = List.map (Array.get rules) group in
       let set = List.fold_left (fun s (_,i,_) -> IntSet.add i s) IntSet.empty rules in
       let constraints =
-        let cond c = IntSet.mem c.i1 set && IntSet.mem c.i2 set && is_cf_or_me c in
+        let cond c = IntSet.mem c.i1 set && IntSet.mem c.i2 set && is_parallel c in
         List.filter cond constraints 
       in
       Array.of_list rules, constraints
@@ -396,7 +413,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
             let group = asserted_bits n_rules i in
             let rules, constraints = get_group rules constraints group in
             let g = build_graph rules constraints (fun _ -> true) in
-            max_clique g))
+            max_clique cmp_clique_pri g))
 
   let const_of_clique gr cl = 
     let module B = HardCaml.Bits.Comb.IntbitsList in
@@ -489,16 +506,11 @@ module Schedule(S : HardCaml.Interface.S) = struct
     ignore @@ S.(map2 (<==) state st_reg);
     st_reg, any_enabled
 
-  let compile_cf r_spec st_clear rules = 
-    let state, rules, constraints = build_constraints rules in
-    let scheduling_groups = conflict_graph rules constraints in
-    let scheduling_encoders = List.map (enumerated_encoder rules constraints) scheduling_groups in
-    let guards = rule_enables rules scheduling_encoders in
-    create_register_state r_spec st_clear state rules guards 
-
-  (* rules are enabled by an external guard and we return a ready signal *)
-  let compile_cf_methods r_spec st_clear rules = 
-    let state, rules, constraints = build_constraints rules in
+  let compile 
+    ?(sched_opt=[`cf; `me; `sc])
+    ?(me_rules=[])
+    ~r_spec ~st_clear ~rules = 
+    let state, rules, constraints = build_constraints ~sched_opt ~me_rules rules in
     let scheduling_groups = conflict_graph rules constraints in
     let scheduling_encoders = List.map (enumerated_encoder rules constraints) scheduling_groups in
     let guards = rule_enables rules scheduling_encoders in
@@ -513,6 +525,8 @@ module type Gaa = sig
   val r_spec : HardCaml.Signal.Types.register
   val clear : t I.t -> t S.t
   val output : t I.t -> t S.t -> t O.t
+  val sched_opt : sched_opt list
+  val me_rules : string list list
 end
 
 module Gaa(G : Gaa) = struct
@@ -524,7 +538,11 @@ module Gaa(G : Gaa) = struct
   let running_name = "__gaa_running"
 
   let f_en rules i = 
-    let s,en = Sched.compile_cf G.r_spec (G.clear i) (rules i) in
+    let s,en = Sched.compile 
+      ~sched_opt:G.sched_opt
+      ~me_rules:G.me_rules
+      ~r_spec:G.r_spec ~st_clear:(G.clear i) ~rules:(rules i) 
+    in
     G.output i s, output running_name en
 
   let f rules i = fst (f_en rules i)

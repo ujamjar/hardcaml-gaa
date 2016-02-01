@@ -7,6 +7,20 @@ type 'a rule =
     action : 'a;
   }
 
+type constraints = 
+  {
+    (* edge *)
+    i1 : int;
+    i2 : int;
+    (* constraints *)
+    cf : bool;
+    me : bool;
+    sc12 : bool;
+    sc21 : bool;
+  }
+
+type sched_opt = [ `cf | `me | `sc ]
+
 module Schedule(S : HardCaml.Interface.S) : sig
 
   (* uninstantiated rule *)
@@ -16,6 +30,8 @@ module Schedule(S : HardCaml.Interface.S) : sig
   type rule_i = string * int * t S.t rule
 
   type state = t S.t * t UidMap.t
+
+  module StrSet : Set.S
 
   val state : unit -> state
 
@@ -31,25 +47,17 @@ module Schedule(S : HardCaml.Interface.S) : sig
 
   val conflict_free : state -> t S.t rule -> t S.t rule -> bool
 
-  val mutually_exclusive : state -> t S.t rule -> t S.t rule -> bool
+  val mutually_exclusive : StrSet.t list -> state -> 
+    string * t S.t rule -> string * t S.t rule -> bool
 
   val sequentially_composable : state -> t S.t rule -> t S.t rule -> bool
 
-  type constraints = 
-    {
-      (* edge *)
-      i1 : int;
-      i2 : int;
-      (* constraints *)
-      cf : bool;
-      me : bool;
-      sc12 : bool;
-      sc21 : bool;
-    }
-
   val instantiate_rules : rule_u list -> state * rule_i list
 
-  val build_constraints : rule_u list -> state * rule_i array * constraints list
+  val build_constraints : 
+    sched_opt:sched_opt list ->
+    me_rules:string list list ->
+    rule_u list -> state * rule_i array * constraints list
 
   val conflict_graph : rule_i array -> constraints list -> int list list
 
@@ -59,7 +67,10 @@ module Schedule(S : HardCaml.Interface.S) : sig
 
   val enumerated_encoder : rule_i array -> constraints list -> int list -> encoder 
 
-  val compile_cf : register -> t S.t -> rule_u list -> t S.t * t
+  val compile : 
+    ?sched_opt:sched_opt list ->
+    ?me_rules:string list list ->
+    r_spec:register -> st_clear:t S.t -> rules:rule_u list -> t S.t * t
 
 end
 
@@ -70,6 +81,8 @@ module type Gaa = sig
   val r_spec : HardCaml.Signal.Types.register
   val clear : t I.t -> t S.t
   val output : t I.t -> t S.t -> t O.t
+  val sched_opt : sched_opt list
+  val me_rules : string list list
 end
 
 module Gaa(G : Gaa) : sig

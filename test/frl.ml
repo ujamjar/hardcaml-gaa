@@ -17,9 +17,9 @@ module Make(G : Gaa) = struct
 
   module O_run = interface (o : G.O) gaa_running[1] end
 
-  let vlog () = 
+  let vlog f = 
     let circ = X.circuit G.name G.rules in
-    Rtl.Verilog.write print_string circ
+    Rtl.Verilog.write (output_string f) circ
 
   module Waveterm_waves = HardCamlWaveTerm.Wave.Make(HardCamlWaveTerm.Wave.Bits(B))
   module Waveterm_sim = HardCamlWaveTerm.Sim.Make(B)(Waveterm_waves)
@@ -66,4 +66,11 @@ module Make(G : Gaa) = struct
   )
 
 end
+
+let with_out_file fname g = 
+  let f = open_out fname in
+  let r = g f in
+  close_out f;
+  r
+
 
