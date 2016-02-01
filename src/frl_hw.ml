@@ -102,6 +102,58 @@
  * Note; with FIFOs and arrays there are undefined cases
  * which exclude SC.
  *
+ * Scheduling
+ * ==========
+ *
+ * In the reference system 1 enabled rules is selected
+ * per step.  Where more than 1 rule is available to 
+ * fire, a non-deterministic choice is made.
+ *
+ * For hardware I am considering a simpler model where
+ * the user design specifies rule priorities and
+ * the hardware is statically shceduled.
+ *
+ * 1] Rules will be provided in descending priority - 
+ *    thas is the 1st enabled rule in the list will
+ *    fire.  Any others that can fire in parallel will
+ *    also be enabled.
+ *
+ * 2] The state update will be done in rule priority 
+ *    order.
+ *
+ * 3] Pick only 1 of the SC rules ('<' or '>').  This
+ *    avoids the complexity of removing cycles from the 
+ *    directed constraint graph and allows us to fit 
+ *    it in the strict rule order.  I think we must choose
+ *    Ra > Rb (where Ra is less than Rb in the priority
+ *    order).  Note that this will execute as 'Rb; Ra'.
+ *    Debatably this is in the wrong order, however, it
+ *    does mean the higher priority rule appears to
+ *    produce the result.
+ *
+ * There seem to be a couple of nice properties that
+ * reduce some of the complexity in the sceduler, but
+ * also (possibly, we'll see) make it somewhat easier
+ * to understand what rules will fire and when.
+ *
+ * 1] In the first step we will build the (undirected)
+ *    constraint graph and find connected components.
+ *    We would normally use CF+ME in this step, but I
+ *    think the 1 sided SC rule could also be included.
+ *    This will give a number of parallel scheduling 
+ *    groups - 1 (or more) rules from each scheduling
+ *    group can be enabled per cycle.
+ *    (NEED TO CHECK THIS...)
+ * 
+ * 2] In the 2nd step we would either build a priority
+ *    encoder (selects 1 valid rule per cycle) or an
+ *    enumerated encoder.  In the latter case a (maximal) 
+ *    clique is found among the groups constraints for each
+ *    combination of enabled rules, and a rom is built.
+ *    If we add the constraint that the clique used must
+ *    include the highest priority enabled rule, we should
+ *    respect the global ordering.
+ *
  *)
 
 open Printf
@@ -365,7 +417,8 @@ module Schedule(S : HardCaml.Interface.S) = struct
   let pri_en_tree x =  
     let rec pri1 = function 
       | [] -> [] 
-      | [a] -> [[a],a] | a::b::t -> 
+      | [a] -> [[a],a] 
+      | a::b::t -> 
         let a,b = a, (b &: (~: a)) in 
         ([a;b],(a|:b)) :: pri1 t 
     in
@@ -441,8 +494,15 @@ module Schedule(S : HardCaml.Interface.S) = struct
     let scheduling_groups = conflict_graph rules constraints in
     let scheduling_encoders = List.map (enumerated_encoder rules constraints) scheduling_groups in
     let guards = rule_enables rules scheduling_encoders in
-    let regs = create_register_state r_spec st_clear state rules guards in
-    regs
+    create_register_state r_spec st_clear state rules guards 
+
+  (* rules are enabled by an external guard and we return a ready signal *)
+  let compile_cf_methods r_spec st_clear rules = 
+    let state, rules, constraints = build_constraints rules in
+    let scheduling_groups = conflict_graph rules constraints in
+    let scheduling_encoders = List.map (enumerated_encoder rules constraints) scheduling_groups in
+    let guards = rule_enables rules scheduling_encoders in
+    create_register_state r_spec st_clear state rules guards 
 
 end
 
