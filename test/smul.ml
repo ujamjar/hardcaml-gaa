@@ -8,10 +8,12 @@ module Smul = struct
   module O = interface product[32] end
   module S = interface product[32] d[32] r[16] end
 
-  let rules i = 
+  let methods = []
+
+  let rules = 
     let open S in
     [
-      "cycle", fun s -> {
+      "cycle", fun i s -> {
         guard = s.r <>:. 0;
         action = { 
           product = mux2 (lsb s.r) (s.product +: s.d) s.product;
@@ -38,10 +40,11 @@ end
 module X = Make(Smul)
 module S = Cyclesim.Api
 
-let () = X.sim (fun ~sim ~clear ~enable ~running ~i ~o ->
+let () = X.sim (fun ~sim ~clear ~enable ~i ~o ->
   S.reset sim;
   List.iter 
     (fun (x,y) ->
+      let i = i.X.G.I.i in
       enable := B.vdd;
       clear := B.vdd;
       i.Smul.I.x := B.consti 16 x;
@@ -49,7 +52,7 @@ let () = X.sim (fun ~sim ~clear ~enable ~running ~i ~o ->
       S.cycle sim;
       clear := B.gnd;
       S.cycle sim;
-      while !running = B.vdd do
+      while !(o.X.G.O.rules_running) = B.vdd do
         S.cycle sim
       done)
     [ (15,10); (9,3); (12,144) ]

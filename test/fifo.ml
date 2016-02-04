@@ -20,11 +20,13 @@ module FIFO = struct
 
   let def = S.map (fun _ -> empty) S.t
 
-  let rules i = 
+  let methods = []
+
+  let rules = 
     let open I in
     let open S in
     [
-      "enq", (fun s -> {
+      "enq", (fun i s -> {
         guard = i.enq &: (~: (s.full1));
         action = {
           data1 = i.enq_x;
@@ -34,7 +36,7 @@ module FIFO = struct
         };
       });
 
-      "deq", (fun s -> {
+      "deq", (fun i s -> {
         guard = i.deq &: s.full0;
         action = { def with
           full1 = gnd;
@@ -43,12 +45,12 @@ module FIFO = struct
         };
       });
 
-      "clearf", (fun s -> {
+      "clearf", (fun i s -> {
         guard = i.clearf;
         action = { def with full1=gnd; full0=gnd };
       });
 
-      "first", (fun s -> {
+      "first", (fun i s -> {
         guard = i.first &: s.full0;
         action = def;
       });
@@ -66,7 +68,9 @@ end
 module X = Make(FIFO)
 module S = Cyclesim.Api
 
-let () = X.sim (fun ~sim ~clear ~enable ~running ~i ~o ->
+let () = X.sim (fun ~sim ~clear ~enable ~i ~o ->
+  let open FIFO.I in
+  let i = i.X.G.I.i in
   let open FIFO.I in
   S.reset sim;
   enable := B.vdd;

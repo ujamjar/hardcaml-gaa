@@ -5,6 +5,38 @@ open Frl_hw
 
 module B = Bits.Comb.IntbitsList 
 
+module Of_list(X : HardCaml.Interface.S) : sig
+  val of_list : 'a list -> 'a X.t
+end = struct
+  let of_list l = 
+    let l = List.map2 (fun (n,b) s -> n,s) X.(to_list t) l in
+    X.(map (fun (n,_) -> List.assoc n l) t)
+end
+
+module Meth(I : HardCaml.Interface.S)(S : HardCaml.Interface.S) = struct
+
+  module type Meth = sig
+    module Args : HardCaml.Interface.S
+    module Rets : HardCaml.Interface.S
+    val meth : string * (t I.t -> t S.t -> t Args.t -> t S.t rule * t Rets.t)
+  end
+
+  module Make(M : Meth) : sig
+    val meth : 
+      string * (string*int) list * (string*int) list * 
+      (t I.t -> t S.t -> t list -> (t S.t rule * t list))
+  end = struct
+    module Al = Of_list(M.Args)
+    let meth = 
+      let name, ameth = M.meth in
+      name, M.Args.(to_list t), M.Rets.(to_list t),
+        (fun i s arg -> 
+          let rule, rets = ameth i s (Al.of_list arg) in
+          rule, M.Rets.to_list rets)
+  end
+
+end
+
 module Make(G' : Gaa) = struct
 
   module G = Gaa(G')

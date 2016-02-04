@@ -22,10 +22,12 @@ module PartSched = struct
     if i<j then List.mem (i,j) cfp
     else List.mem (j,i) cfp
 
-  let rules i = 
+  let methods = []
+
+  let rules = 
     let open S in
     let cf i = 
-      fun (s : HardCaml.Signal.Comb.t S.t) -> { 
+      fun _(s : HardCaml.Signal.Comb.t S.t) -> { 
         guard = vdd;
         action = {
           t = Array.init 6 (fun j -> 
