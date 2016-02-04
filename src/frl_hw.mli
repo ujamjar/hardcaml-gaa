@@ -21,10 +21,14 @@ type constraints =
 
 type sched_opt = [ `cf | `me | `sc ]
 
-module Schedule(S : HardCaml.Interface.S) : sig
+module Schedule(I : HardCaml.Interface.S)(S : HardCaml.Interface.S) : sig
 
   (* uninstantiated rule *)
-  type rule_u = string * (t S.t -> t S.t rule)
+  type rule_u = string * (t I.t -> t S.t -> t S.t rule)
+
+  (* method rule *)
+  type rule_m = string * (t * t list * (string*int) list * 
+                          (t I.t -> t S.t -> t list -> t S.t rule * t list))
 
   (* instantiated rule *)
   type rule_i = string * int * t S.t rule
@@ -52,12 +56,13 @@ module Schedule(S : HardCaml.Interface.S) : sig
 
   val sequentially_composable : state -> t S.t rule -> t S.t rule -> bool
 
-  val instantiate_rules : rule_u list -> state * rule_i list
+  val instantiate_rules : rule_m list -> rule_u list -> t I.t -> state * rule_i list * (t * t list) list
 
   val build_constraints : 
     sched_opt:sched_opt list ->
     me_rules:string list list ->
-    rule_u list -> state * rule_i array * constraints list
+    state -> rule_i list ->
+    rule_i array * constraints list
 
   val conflict_graph : rule_i array -> constraints list -> int list list
 
@@ -70,7 +75,9 @@ module Schedule(S : HardCaml.Interface.S) : sig
   val compile : 
     ?sched_opt:sched_opt list ->
     ?me_rules:string list list ->
-    r_spec:register -> st_clear:t S.t -> rules:rule_u list -> t S.t * t
+    r_spec:register -> st_clear:t S.t -> 
+    methods:rule_m list -> rules:rule_u list -> i:t I.t ->
+    (t S.t * t) * (t * t list) list
 
 end
 
@@ -78,6 +85,11 @@ module type Gaa = sig
   module I : HardCaml.Interface.S
   module O : HardCaml.Interface.S
   module S : HardCaml.Interface.S
+  val name : string
+  val methods : 
+    (string * (string*int) list * (string*int) list * 
+    (t I.t -> t S.t -> t list -> t S.t rule * t list)) list
+  val rules : (string * (t I.t -> t S.t -> t S.t rule)) list
   val r_spec : HardCaml.Signal.Types.register
   val clear : t I.t -> t S.t
   val output : t I.t -> t S.t -> t O.t
@@ -86,14 +98,25 @@ module type Gaa = sig
 end
 
 module Gaa(G : Gaa) : sig
-  module Sched : module type of Schedule(G.S)
-  module I : HardCaml.Interface.S
-  module O : HardCaml.Interface.S
+  module Sched : module type of Schedule(G.I)(G.S)
 
-  val f_en : (t G.I.t -> Sched.rule_u list) -> t G.I.t -> t G.O.t * t
-  val circuit_en : string -> (t G.I.t -> Sched.rule_u list) -> HardCaml.Circuit.t
+  val n_methods : int
 
-  val f : (t G.I.t -> Sched.rule_u list) -> t G.I.t -> t G.O.t
-  val circuit : string -> (t G.I.t -> Sched.rule_u list) -> HardCaml.Circuit.t
+  module I : interface
+    (i : G.I)
+    method_en{ }
+    method_in{ }
+  end
+  module O : interface
+    (o : G.O)
+    method_vld{ }
+    method_out{ }
+    rules_running
+  end
+
+  val f : t I.t -> t O.t
+
+  val circuit : string -> HardCaml.Circuit.t
+
 end
 

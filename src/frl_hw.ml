@@ -213,7 +213,7 @@ type constraints =
 
 type sched_opt = [ `cf | `me | `sc ]
 
-module Schedule(S : HardCaml.Interface.S) = struct
+module Schedule(I : HardCaml.Interface.S)(S : HardCaml.Interface.S) = struct
 
   let (--) s n = 
     let w = wire (width s) in
@@ -222,7 +222,9 @@ module Schedule(S : HardCaml.Interface.S) = struct
 
   open HardCaml.Signal.Types
 
-  type rule_u = string * (t S.t -> t S.t rule)
+  type rule_u = string * (t I.t -> t S.t -> t S.t rule)
+  type rule_m = string * (t * t list * (string*int) list * 
+                          (t I.t -> t S.t -> t list -> t S.t rule * t list))
   type rule_i = string * int * t S.t rule
   type state = t S.t * t UidMap.t
 
@@ -288,16 +290,29 @@ module Schedule(S : HardCaml.Interface.S) = struct
   (* XXX could mangle the names, but we'll address this properly when we 
    * consider module hierarchies *)
   let check_rule_names_unique rules = 
+    let f (a,_,_) = a in
     if List.length rules <> 
-      (StrSet.cardinal (StrSet.of_list (List.map fst rules))) then begin
+      (StrSet.cardinal (StrSet.of_list (List.map f rules))) then begin
       failwith "rule names must be unique"
     end
 
-  let instantiate_rules rules =
-    check_rule_names_unique rules;
+  let method_rules methods i state = 
+    let r = List.map
+      (fun (n,(e,args,rets,m)) ->
+        (*let args = List.map (fun (n',b) -> input ("method_"^n^"_arg_"^n') b) args in*)
+        let rule, rets = m i (fst state) args in
+        (n, {rule with guard=e}), (rule.guard,rets))
+      methods
+    in
+    List.map fst r, List.map snd r
+
+  let instantiate_rules methods rules i =
     let state = state () in
-    let rules = List.mapi (fun i (n,r) -> n, i, r (fst state)) rules in
-    state, rules
+    let methods, method_outputs = method_rules methods i state in
+    let rules = List.map (fun (n,r) -> n, r i (fst state)) rules in
+    let rules = List.mapi (fun j (n,r) -> n,j,r) (methods @ rules) in
+    check_rule_names_unique rules;
+    state, rules, method_outputs
 
   let print_uid_set s = 
     List.iter (printf "%Li ") (UidSet.elements s)
@@ -319,15 +334,13 @@ module Schedule(S : HardCaml.Interface.S) = struct
     let rec pairs = function [] -> [] | h::t -> (List.map (fun t -> h,t) t) :: pairs t in
     List.concat (pairs l) 
 
-  let build_constraints ~sched_opt ~me_rules rules =
+  let build_constraints ~sched_opt ~me_rules state rules =
     (* sets of mutually exclusive rules *)
     let me_rules = List.map StrSet.of_list me_rules in
     (* enabled analysis *)
     let calc_me, calc_cf, calc_sc = 
       List.mem `me sched_opt, List.mem `cf sched_opt, List.mem `sc sched_opt 
     in
-    (* build rules over (new) state *)
-    let state, rules = instantiate_rules rules in
     List.iter (show_rule_dr state) rules;
     (* get all pairs of rules *)
     let pairs = pairs rules in
@@ -345,7 +358,7 @@ module Schedule(S : HardCaml.Interface.S) = struct
             cf; me; sc12; sc21;
           }) pairs
     in
-    state, Array.of_list rules, constraints
+    Array.of_list rules, constraints
 
   let is_parallel c = c.cf || c.me || c.sc21
   let not_parallel c = not (is_parallel c)
@@ -450,24 +463,24 @@ module Schedule(S : HardCaml.Interface.S) = struct
     let get_enables gr = 
       List.map (fun i -> let n,_,r = Array.get rules i in r.guard -- ("__"^n^"_g")) gr 
     in
-    List.map
-      (fun s ->
-        match s with
-        | `priority gr -> List.map2 (fun idx en -> idx,en) gr (pri_en_tree @@ get_enables gr)
-        | `enum (gr,cl) -> 
-          let sel = concat @@ List.rev @@ get_enables gr in
-          let data = List.map (const_of_clique gr) @@ Array.to_list cl in
-          let en = List.rev @@ bits @@ mux sel data in
-          List.map2 (fun idx en -> idx,en) gr en)
-      sched
+    try
+      List.map
+        (fun s ->
+          match s with
+          | `priority gr -> List.map2 (fun idx en -> idx,en) gr (pri_en_tree @@ get_enables gr)
+          | `enum (gr,cl) -> 
+            let sel = concat @@ List.rev @@ get_enables gr in
+            let data = List.map (const_of_clique gr) @@ Array.to_list cl in
+            let en = List.rev @@ bits @@ mux sel data in
+            List.map2 (fun idx en -> idx,en) gr en)
+        sched
+    with _ -> failwith "rule enables"
 
   let pri_mux l = 
-    try
-      tree 2 
-        (function [e,a] -> e, a
-                | [(e1,a1);(e2,a2)] -> e1 |: e2, mux2 e1 a1 a2
-                | _ -> failwith "bad pri_mux tree") l
-    with _ -> failwith "pri_mux"
+    tree 2 
+      (function [e,a] -> e, a
+              | [(e1,a1);(e2,a2)] -> e1 |: e2, mux2 e1 a1 a2
+              | _ -> failwith "bad pri_mux tree") l
 
   let sort_guards guards = 
     Array.of_list @@ List.sort (fun a b -> compare (fst a) (fst b)) @@ List.concat guards 
@@ -487,13 +500,13 @@ module Schedule(S : HardCaml.Interface.S) = struct
     let merge_st st a e = 
       S.(map2 (fun st a -> if a = Signal_empty then st else (e,a)::st) st a)
     in
-    let st_mux = 
+    let st_mux = (* state updates in reverse priority order *)
       Array.fold_left (fun st (n,r,e) -> merge_st st r.action e) 
         S.(map (fun _ -> []) t)
         rules
     in
     let st_reg = 
-      let st = S.(map2 (fun s t -> s,t) st_mux st_clear) in
+      let st = S.(map2 (fun s t -> List.rev s,t) st_mux st_clear) in
       S.(map2 
         (fun (n,b) (st,stc) -> 
           if st=[] then stc 
@@ -509,12 +522,14 @@ module Schedule(S : HardCaml.Interface.S) = struct
   let compile 
     ?(sched_opt=[`cf; `me; `sc])
     ?(me_rules=[])
-    ~r_spec ~st_clear ~rules = 
-    let state, rules, constraints = build_constraints ~sched_opt ~me_rules rules in
+    ~r_spec ~st_clear ~methods ~rules ~i = 
+    let state, rules, method_outputs  = instantiate_rules methods rules i in
+    let rules, constraints = build_constraints ~sched_opt ~me_rules state rules in
     let scheduling_groups = conflict_graph rules constraints in
     let scheduling_encoders = List.map (enumerated_encoder rules constraints) scheduling_groups in
     let guards = rule_enables rules scheduling_encoders in
-    create_register_state r_spec st_clear state rules guards 
+    create_register_state r_spec st_clear state rules guards,
+    method_outputs
 
 end
 
@@ -522,6 +537,11 @@ module type Gaa = sig
   module I : HardCaml.Interface.S
   module O : HardCaml.Interface.S
   module S : HardCaml.Interface.S
+  val name : string
+  val methods : 
+    (string * (string*int) list * (string*int) list * 
+    (t I.t -> t S.t -> t list -> t S.t rule * t list)) list
+  val rules : (string * (t I.t -> t S.t -> t S.t rule)) list
   val r_spec : HardCaml.Signal.Types.register
   val clear : t I.t -> t S.t
   val output : t I.t -> t S.t -> t O.t
@@ -531,33 +551,82 @@ end
 
 module Gaa(G : Gaa) = struct
 
-  module Sched = Schedule(G.S)
-  module I = G.I
-  module O = G.O
-  
-  let running_name = "__gaa_running"
+  module Sched = Schedule(G.I)(G.S)
 
-  let f_en rules i = 
-    let s,en = Sched.compile 
+  let n_methods = List.length G.methods
+  let n_method_inputs = List.fold_left (fun acc (_,a,_,_) -> acc + List.length a) 0 G.methods 
+  let n_method_outputs = List.fold_left (fun acc (_,_,r,_) -> acc + List.length r) 0 G.methods 
+
+  let methods = 
+    let ports io n' = List.map (fun (n,b) -> "method_" ^ io ^ "_" ^ n' ^ "_" ^ n, b) in
+    List.map (fun (n,a,r,m) -> n,ports "in" n a, ports "out" n r,m) G.methods
+
+  module I' = interface
+    (i : G.I)
+    method_en{n_methods}[1]
+    method_in{n_method_inputs}
+  end
+  module O' = interface
+    (o : G.O)
+    method_vld{n_methods}[1]
+    method_out{n_method_outputs}
+    rules_running[1]
+  end
+
+  module I = struct
+    include I' 
+    let t = 
+      I'.{ t with
+        method_en = List.map (fun (n,_,_,_) -> "method_en_" ^ n, 1) methods;
+        method_in = List.concat @@ List.map (fun (_,a,_,_) -> a) methods;
+      }
+  end
+
+  module O = struct
+    include O' 
+    let t = 
+      O'.{ t with
+        method_vld = List.map (fun (n,_,_,_) -> "method_vld_" ^ n, 1) methods;
+        method_out = List.concat @@ List.map (fun (_,_,r,_) -> r) methods;
+      }
+  end
+
+  let get_methods : t I.t -> Sched.rule_m list = fun i -> 
+    let rec g a b c = 
+      match a, b with
+      | [], _ -> List.rev c, b
+      | _::a', b::b' -> g a' b' (b::c)
+      | _, [] -> failwith "imbalanced in ports"
+    in
+    let rec f e m args = 
+      match e,m with
+      | [], [] -> []
+      | e::e', (n,a,r,m)::m' ->
+        let a, args = g a args [] in
+        (n,(e,a,r,m)) :: f e' m' args
+      | _ -> failwith "imbalanced lists"
+    in
+    f i.I.method_en methods i.I.method_in
+
+  let f i = 
+    let methods = get_methods i in
+    let (s,en),metho = Sched.compile 
       ~sched_opt:G.sched_opt
       ~me_rules:G.me_rules
-      ~r_spec:G.r_spec ~st_clear:(G.clear i) ~rules:(rules i) 
+      ~r_spec:G.r_spec ~st_clear:(G.clear i.I.i) ~methods ~rules:G.rules ~i:i.I.i 
     in
-    G.output i s, output running_name en
+    O.{
+      rules_running = en;
+      method_vld = List.map fst metho;
+      o = G.output i.I.i s;
+      method_out = List.concat @@ List.map snd metho;
+    }
 
-  let f rules i = fst (f_en rules i)
-
-  let circuit name rules = 
-    let i = G.I.(map (fun (n,b) -> input n b) t) in
-    let o = f rules i in
-    let o = G.O.(to_list @@ map2 (fun (n,b) o -> output n o) t o) in
+  let circuit name = 
+    let i = I.(map (fun (n,b) -> input n b) t) in
+    let o = f i in
+    let o = O.(to_list @@ map2 (fun (n,b) o -> output n o) t o) in
     HardCaml.Circuit.make name o
-
-  let circuit_en name rules = 
-    let i = G.I.(map (fun (n,b) -> input n b) t) in
-    let o,en = f_en rules i in
-    let o = G.O.(to_list @@ map2 (fun (n,b) o -> output n o) t o) in
-    HardCaml.Circuit.make name (output running_name en :: o)
 
 end
 

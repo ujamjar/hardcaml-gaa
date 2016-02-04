@@ -58,6 +58,9 @@ module FIFO = struct
   let clear i = S.(map (fun (_,b) -> zero b) t)
   let output i s = O.{ data = s.S.data0 }
 
+  let sched_opt = [ `cf; `me; `sc ]
+  let me_rules = []
+
 end
 
 module X = Make(FIFO)

@@ -5,20 +5,12 @@ open Frl_hw
 
 module B = Bits.Comb.IntbitsList 
 
-module type Gaa = sig
-  include Gaa
-  val name : string
-  val rules : t I.t -> (string * (t S.t -> t S.t rule)) list
-end
+module Make(G' : Gaa) = struct
 
-module Make(G : Gaa) = struct
-
-  module X = Gaa(G)
-
-  module O_run = interface (o : G.O) gaa_running[1] end
+  module G = Gaa(G')
 
   let vlog f = 
-    let circ = X.circuit G.name G.rules in
+    let circ = G.circuit G'.name in
     Rtl.Verilog.write (output_string f) circ
 
   module Waveterm_waves = HardCamlWaveTerm.Wave.Make(HardCamlWaveTerm.Wave.Bits(B))
@@ -29,30 +21,25 @@ module Make(G : Gaa) = struct
     let open Waveterm_waves in
     let f = function (n,b) -> if b=1 then n, B else n, H in
     Some(
-      [ f ("clock",1); f ("clear", 1); f ("enable",1); f ("gaa_running",1) ] @
+      [ f ("clock",1); f ("clear", 1); f ("enable",1); ] @
       G.I.(to_list @@ map f t) @ 
       G.O.(to_list @@ map f t) @ 
-      G.S.(to_list @@ map f t)  
+      G'.S.(to_list @@ map f t)  
     )
 
   let sim f = 
-    let module Y = Interface.Gen(B)(G.I)(O_run) in
+    let module Y = Interface.Gen(B)(G.I)(G.O) in
     let module S = Cyclesim.Api in
     
-    let hw_f i = (* decorate outputs with rule status *)
-      let o, gaa_running = X.f_en G.rules i in
-      O_run.{ o; gaa_running }
-    in
-    let circ, sim, i, o, _ = Y.make G.name hw_f in
-    let clear = S.in_port sim "clear" in
-    let enable = S.in_port sim "enable" in
-    let running = S.out_port sim "gaa_running" in
+    let circ, sim, i, o, _ = Y.make G'.name G.f in
+    let clear = try S.in_port sim "clear" with _ -> ref B.empty in
+    let enable = try S.in_port sim "enable" with _ -> ref B.empty in
     let sim, waves = Waveterm_sim.wrap ?cfg:wave_cfg sim in
 
-    let () = f ~sim ~clear ~enable ~running ~i ~o in
+    let () = f ~sim ~clear ~enable ~i ~o in
     Lwt_main.run (Waveterm_ui.run Waveterm_waves.({ cfg=default; waves }))
 
-  let autosim n = sim (fun ~sim ~clear ~enable ~running ~i ~o ->
+  let autosim n = sim (fun ~sim ~clear ~enable ~i ~o ->
     let module S = Cyclesim.Api in
     S.reset sim;
     clear := B.vdd;

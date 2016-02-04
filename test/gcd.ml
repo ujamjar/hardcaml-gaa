@@ -14,16 +14,19 @@ module Gcd = struct
   (* atomic state *)
   module S = interface x[8] y[8] end
 
+  (* (unused) methods *)
+  let methods = []
+
   (* atomic state update rules *)
-  let rules i = 
+  let rules = 
     let open S in
     [
-      "sub", (fun s -> {
+      "sub", (fun i s -> {
         guard  = ((s.x >=: s.y) &: (s.y <>:. 0));
         action = { x = (s.x -: s.y); y = empty; };
       });
           
-      "swap", (fun s -> {
+      "swap", (fun i s -> {
         guard  = ((s.x <: s.y) &: (s.y <>:. 0));
         action = { x = s.y; y = s.x };
       });
@@ -57,13 +60,16 @@ end
 module X = Make(Gcd)
 module S = Cyclesim.Api
 
-let () = X.sim (fun ~sim ~clear ~enable ~running ~i ~o ->
+let () = X.sim (fun ~sim ~clear ~enable ~i ~o ->
+  let open Gcd.I in
+  let running = o.X.G.O.rules_running in
+  let i = i.X.G.I.i in
   S.reset sim;
   List.iter 
     (fun (x,y) ->
       clear := B.vdd;
-      i.Gcd.I.x_in := B.consti 8 x;
-      i.Gcd.I.y_in := B.consti 8 y;
+      i.x_in := B.consti 8 x;
+      i.y_in := B.consti 8 y;
       S.cycle sim;
       clear := B.gnd;
       enable := B.vdd;
