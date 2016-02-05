@@ -15,7 +15,7 @@ Library HardCamlGaa
   Path:          src
   Findlibname:   hardcaml-gaa
   Pack:          true
-  Modules:       Prims, Graph_ex, Mrl, Frl, Frl_hw
+  Modules:       Prims, Graph_ex, Mrl, Frl, Frl_hw, State, Rule, Sched, Compile
   BuildDepends:  bytes, ocamlgraph,hardcaml,hardcaml.syntax
   XMETARequires: bytes, ocamlgraph,hardcaml
 
