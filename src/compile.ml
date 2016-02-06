@@ -104,10 +104,16 @@ module Build = struct
 
   open HardCaml.Signal.Types
   open HardCaml.Signal.Comb
+  open State
+
+  let (--) s n = 
+    let w = wire (width s) in
+    w <== s;
+    w -- n
 
   let state ~st_spec = 
-    let s = List.map (fun (n,b) -> n, wire b) st_spec in
-    let map = List.fold_left (fun m (_,w) -> UidMap.add (uid w) w m) UidMap.empty s in
+    let s = State.map_t (fun (n,b) -> n, wire b) st_spec in
+    let map = State.fold_left (fun m (_,w) -> UidMap.add (uid w) w m) UidMap.empty s in
     s, map
 
   (* XXX could mangle the names, but we'll address this properly when we 
@@ -116,24 +122,29 @@ module Build = struct
     let f (a,_) = a in
     if List.length rules <> 
       (Sched.StrSet.cardinal (Sched.StrSet.of_list (List.map f rules))) then begin
-      failwith "rule names must be unique"
+      failwith "rule and method names must be unique"
     end
+
+  let check_rule_state s (rule_name,rule) = 
+    try State.iter2 (fun (n,_) (m,_) -> assert (n=m)) s rule.Rule.action
+    with _ -> failwith ("invalid state in rule " ^ rule_name)
 
   let method_rules ~methods ~i ~st = 
     let open Rule in
     let meth (n,m) = 
-      let rule, rets = m.fn i st m.args in
+      let rule, rets = m.spec.fn i st m.args in
       (n, {rule with guard = m.en}), (rule.guard, rets)
     in
     let r = List.map meth methods in
     List.map fst r, List.map snd r
 
-  let instantiate_rules ~st ~methods ~rules ~i =
-    let state = state st in
+  let instantiate_rules ~methods ~rules ~i ~s =
+    let state = state s in
     let methods, method_outputs = method_rules methods i (fst state) in
     let rules = List.map (fun (n,r) -> n, r ~i ~s:(fst state)) rules in
     let rules = List.map (fun (n,r) -> n,r) (methods @ rules) in
     check_rule_names_unique rules;
+    List.iter (check_rule_state s) rules;
     state, rules, method_outputs
 
   let rule_enables ~rules ~sched = 
@@ -157,8 +168,9 @@ module Build = struct
   let sort_guards guards = 
     Array.of_list @@ List.sort (fun a b -> compare (fst a) (fst b)) @@ List.concat guards 
 
-  let create_register_state ~r_spec ~st_clear ~state ~rules ~guards = 
-    let state,_ = state in
+  let create_register_state ~r_spec ~st_clear ~state
+    ~(rules:(string * Rule.inst) array) ~guards = 
+    let state = State.to_list @@ fst state in
     let guards = sort_guards guards in
     let rules = Array.init (Array.length rules) 
       (fun i -> 
@@ -173,22 +185,38 @@ module Build = struct
       List.(map2 (fun st (_,a) -> if a = Signal_empty then st else (e,a)::st) st a)
     in
     let st_mux = (* state updates in reverse priority order *)
-      Array.fold_left (fun st (n,r,e) -> merge_st st r.Rule.action e) 
+      Array.fold_left (fun st (n,r,e) -> merge_st st (State.to_list r.Rule.action) e) 
         (List.map (fun _ -> []) state)
         rules
     in
     let st_reg = 
-      let st = List.map2 (fun s (_,t) -> List.rev s,t) st_mux st_clear in
+      let st = List.map2 (fun s (_,t) -> List.rev s,t) st_mux (State.to_list st_clear) in
       List.(map2 
         (fun (n,_) (st,stc) -> 
-          if st=[] then stc 
+          if st=[] then n, stc 
           else
             let e, a = Encoder.pri_mux st in
             let r_spec = { r_spec with reg_clear_value=stc; reg_reset_value=stc } in
-            HardCaml.Signal.Seq.(reg r_spec e a) -- n) state st) 
+            n, HardCaml.Signal.Seq.(reg r_spec e a) -- n) state st) 
     in
 
-    ignore @@ (List.map2 (fun (_,l) r -> l <== r) state st_reg);
-    st_reg, any_enabled
+    ignore @@ (List.map2 (fun (_,l) (_,r) -> l <== r) state st_reg);
+    any_enabled, State.of_list st_reg
+
+  let compile 
+    ?(sched_opt=[`cf; `me; `sc])
+    ?(me_rules=[])
+    ~r_spec ~st_clear ~methods ~rules ~i ~s = 
+    let state, rules, method_outputs = instantiate_rules ~methods ~rules ~i ~s in
+    let dnr = Sched.DnR.make state rules in
+    let pairs = Sched.pairs (List.mapi (fun i (n,_) -> n,i) rules) in
+    let constraints = Sched.Constraints.make ~sched_opt ~me_rules dnr pairs in
+    let scheduling_groups = Sched.Graph.conflict_graph (List.length rules) constraints in
+    let rules = Array.of_list rules in
+    let encoders = List.map (Encoder.enumerated_encoder rules constraints) scheduling_groups in
+    let guards = rule_enables rules encoders in
+    let regst = create_register_state r_spec st_clear state rules guards in
+    regst, method_outputs
 
 end
+

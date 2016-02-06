@@ -1,7 +1,8 @@
 open HardCaml.Signal.Types
 open HardCaml.Signal.Comb
+open State
 
-type state_map = t Rule.state * t UidMap.t
+type state_map = Rule.state_sig * t UidMap.t
 
 type sched_opt = [ `cf | `me | `sc ]
 
@@ -39,7 +40,7 @@ module DnR = struct
   let domain_of_guard state rule = domain_of_expr state UidSet.empty rule.Rule.guard
 
   let domain_of_action state rule = 
-    List.fold_left (fun s (_,e) -> domain_of_expr state s e) UidSet.empty rule.Rule.action
+    State.fold_left (fun s (_,e) -> domain_of_expr state s e) UidSet.empty rule.Rule.action
 
   let domain state rule = 
     UidSet.union
@@ -52,11 +53,11 @@ module DnR = struct
       else UidSet.add (uid w) set
     in
     List.fold_left add_to_range UidSet.empty 
-      List.(map2 (fun (_,a) (_,b) -> a,b) state rule.Rule.action)
+      State.(map2 (fun (_,a) (_,b) -> a,b) state rule.Rule.action)
 
   let make state rules = 
     Array.of_list @@ List.map 
-      (fun r -> 
+      (fun (_,r) -> 
         { 
           domain = lazy (domain state r);
           range = lazy (range state r); 

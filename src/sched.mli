@@ -1,11 +1,13 @@
 open HardCaml.Signal.Types
 open HardCaml.Signal.Comb
 
-type state_map = t Rule.state * t UidMap.t
+type state_map = Rule.state_sig * t UidMap.t
 
 type sched_opt = [ `cf | `me | `sc ]
 
 module StrSet : Set.S with type elt = string
+
+val pairs : 'a list -> ('a * 'a) list
 
 (* domain and range of a rule *)
 module DnR : sig
@@ -26,7 +28,7 @@ module DnR : sig
 
   val range : state_map -> Rule.inst -> UidSet.t
 
-  val make : state_map -> Rule.inst list -> t array
+  val make : state_map -> ('a * Rule.inst) list -> t array
 
 end
 

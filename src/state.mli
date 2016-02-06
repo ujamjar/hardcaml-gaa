@@ -11,27 +11,9 @@ module type S = sig
   val fold_left : ('a -> (string * 'b) -> 'a) -> 'a -> 'b t -> 'a
 end
 
-module Make( ) : S = struct
-
-  type 'a t = (string * 'a) list
-
-  let of_list l = l
-  let to_list l = l
-
-  let length = List.length
-  let iter = List.iter
-  let iter2 = List.iter2
-  let map = List.map 
-  let map2 = List.map2
-  let fold_left = List.fold_left
-
-  let map_t = List.map
-
-end
-
-module State = Make()
-module Inp = Make()
-module Out = Make()
-module Arg = Make()
-module Ret = Make()
+module State : S
+module Inp : S
+module Out : S
+module Arg : S
+module Ret : S
 

@@ -25,15 +25,13 @@ module Build : sig
   val state : st_spec:Rule.state_spec -> Sched.state_map
 
   val method_rules : 
-    methods:(string * Rule.meth) list -> i:Rule.state_sig -> st:Rule.state_sig -> 
-    (string * Rule.inst) list * (Comb.t * Rule.state_sig) list
+    methods:(string * Rule.meth) list -> i:Rule.inp_sig -> st:Rule.state_sig -> 
+    (string * Rule.inst) list * (Comb.t * Rule.ret_sig) list
 
   val instantiate_rules : 
-    st:Rule.state_spec -> 
-    methods:(string * Rule.meth) list -> 
-    rules:(string * Rule.unrule) list ->
-    i:Rule.state_sig -> 
-    Sched.state_map * (string * Rule.inst) list * (Comb.t * Rule.state_sig) list
+    methods:(string * Rule.meth) list -> rules:(string * Rule.unrule) list ->
+    i:Rule.inp_sig -> s:Rule.state_spec ->
+    Sched.state_map * (string * Rule.inst) list * (Comb.t * Rule.ret_sig) list
 
   val rule_enables : 
     rules:(string * Rule.inst) array -> 
@@ -42,11 +40,18 @@ module Build : sig
 
   val create_register_state :
     r_spec:Types.register -> 
-    st_clear:Comb.t Rule.state -> 
+    st_clear:Rule.state_sig -> 
     state:Sched.state_map -> 
     rules:(string * Rule.inst) array ->
     guards:(int * Comb.t) list list -> 
-    Comb.t list * Comb.t
+    Comb.t * Rule.state_sig
+
+  val compile : 
+    ?sched_opt:Sched.sched_opt list -> ?me_rules:string list list ->
+    r_spec:Types.register -> st_clear:Rule.state_sig -> 
+    methods:(string * Rule.meth) list -> rules:(string * Rule.unrule) list ->
+    i:Rule.inp_sig -> s:Rule.state_spec -> 
+    ((Comb.t * Rule.state_sig) * (Comb.t * Rule.ret_sig) list)
 
 end
 

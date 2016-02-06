@@ -1,45 +1,43 @@
 open HardCaml
 open Signal.Comb
 open HardCamlGaa
-open Frl_hw
 
 module B = Bits.Comb.IntbitsList 
-
-module Of_list(X : HardCaml.Interface.S) : sig
-  val of_list : 'a list -> 'a X.t
-end = struct
-  let of_list l = 
-    let l = List.map2 (fun (n,b) s -> n,s) X.(to_list t) l in
-    X.(map (fun (n,_) -> List.assoc n l) t)
-end
 
 module Meth(I : HardCaml.Interface.S)(S : HardCaml.Interface.S) = struct
 
   module type Meth = sig
     module Args : HardCaml.Interface.S
     module Rets : HardCaml.Interface.S
-    val meth : string * (t I.t -> t S.t -> t Args.t -> t S.t rule * t Rets.t)
+    val meth : string * (t I.t -> t S.t -> t Args.t -> t S.t Rule.t * t Rets.t)
   end
 
+  module Il = Module.I2S(I)(State.Inp)
+  module Sl = Module.I2S(S)(State.State)
+
   module Make(M : Meth) : sig
-    val meth : 
-      string * (string*int) list * (string*int) list * 
-      (t I.t -> t S.t -> t list -> (t S.t rule * t list))
+    val meth : string * Rule.unmeth
   end = struct
-    module Al = Of_list(M.Args)
+    module Al = Module.I2S(M.Args)(State.Arg)
+    module Rl = Module.I2S(M.Rets)(State.Ret)
     let meth = 
-      let name, ameth = M.meth in
-      name, M.Args.(to_list t), M.Rets.(to_list t),
-        (fun i s arg -> 
-          let rule, rets = ameth i s (Al.of_list arg) in
-          rule, M.Rets.to_list rets)
+      let name, meth = M.meth in
+      let arg_spec = Al.to_state_map snd M.Args.t in
+      let ret_spec = Rl.to_state_map snd M.Rets.t in
+      let fn ~i ~s ~a = 
+        let ru, ret = meth (Il.to_intf i) (Sl.to_intf s) (Al.to_intf a) in
+        Rule.{ ru with action = Sl.to_state ru.action },
+        Rl.to_state ret
+      in
+      name, Rule.{ arg_spec; ret_spec; fn }
+
   end
 
 end
 
-module Make(G' : Gaa) = struct
+module Make(G' : Module.S) = struct
 
-  module G = Gaa(G')
+  module G = Module.Make(G')
 
   let vlog f = 
     let circ = G.circuit G'.name in
@@ -92,4 +90,4 @@ let with_out_file fname g =
   close_out f;
   r
 
-
+open Rule
