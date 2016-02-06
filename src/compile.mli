@@ -22,16 +22,16 @@ module Build : sig
 
   open HardCaml.Signal
 
-  val state : st_spec:Rule.state_spec -> Sched.state_map
+  val state : st_spec:State.state_spec -> Sched.state_map
 
   val method_rules : 
-    methods:(string * Rule.meth) list -> i:Rule.inp_sig -> st:Rule.state_sig -> 
-    (string * Rule.inst) list * (Comb.t * Rule.ret_sig) list
+    methods:(string * Method.meth) list -> i:State.inp_sig -> st:State.state_sig -> 
+    (string * Rule.inst) list * (Comb.t * State.ret_sig) list
 
   val instantiate_rules : 
-    methods:(string * Rule.meth) list -> rules:(string * Rule.unrule) list ->
-    i:Rule.inp_sig -> s:Rule.state_spec ->
-    Sched.state_map * (string * Rule.inst) list * (Comb.t * Rule.ret_sig) list
+    methods:(string * Method.meth) list -> rules:(string * Rule.unrule) list ->
+    i:State.inp_sig -> s:State.state_spec ->
+    Sched.state_map * (string * Rule.inst) list * (Comb.t * State.ret_sig) list
 
   val rule_enables : 
     rules:(string * Rule.inst) array -> 
@@ -40,18 +40,37 @@ module Build : sig
 
   val create_register_state :
     r_spec:Types.register -> 
-    st_clear:Rule.state_sig -> 
+    st_clear:State.state_sig -> 
     state:Sched.state_map -> 
     rules:(string * Rule.inst) array ->
     guards:(int * Comb.t) list list -> 
-    Comb.t * Rule.state_sig
+    Comb.t * State.state_sig
+
+  val schedule : 
+    ?sched_opt:Sched.sched_opt list -> ?me_rules:string list list ->
+    methods:(string * Method.meth) list -> rules:(string * Rule.unrule) list ->
+    i:State.inp_sig -> s:State.state_spec -> 
+    Sched.state_map * 
+    (string * Rule.inst) list * 
+    (Comb.t * State.ret_sig) list * 
+    Sched.Constraints.t list
+
+  val print_constraints : 
+    out_channel ->
+    (string * Rule.inst) list ->
+    Sched.Constraints.t list -> unit
+
+  val print_schedule : 
+    out_channel ->
+    (string * Rule.inst) list ->
+    int list list -> unit
 
   val compile : 
     ?sched_opt:Sched.sched_opt list -> ?me_rules:string list list ->
-    r_spec:Types.register -> st_clear:Rule.state_sig -> 
-    methods:(string * Rule.meth) list -> rules:(string * Rule.unrule) list ->
-    i:Rule.inp_sig -> s:Rule.state_spec -> 
-    ((Comb.t * Rule.state_sig) * (Comb.t * Rule.ret_sig) list)
+    r_spec:Types.register -> st_clear:State.state_sig -> 
+    methods:(string * Method.meth) list -> rules:(string * Rule.unrule) list ->
+    i:State.inp_sig -> s:State.state_spec -> 
+    ((Comb.t * State.state_sig) * (Comb.t * State.ret_sig) list)
 
 end
 

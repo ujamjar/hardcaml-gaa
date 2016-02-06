@@ -16,7 +16,7 @@ module Meth(I : HardCaml.Interface.S)(S : HardCaml.Interface.S) = struct
   module Sl = Module.I2S(S)(State.State)
 
   module Make(M : Meth) : sig
-    val meth : string * Rule.unmeth
+    val meth : string * Method.unmeth
   end = struct
     module Al = Module.I2S(M.Args)(State.Arg)
     module Rl = Module.I2S(M.Rets)(State.Ret)
@@ -29,7 +29,7 @@ module Meth(I : HardCaml.Interface.S)(S : HardCaml.Interface.S) = struct
         Rule.{ ru with action = Sl.to_state ru.action },
         Rl.to_state ret
       in
-      name, Rule.{ arg_spec; ret_spec; fn }
+      name, Method.{ arg_spec; ret_spec; fn }
 
   end
 

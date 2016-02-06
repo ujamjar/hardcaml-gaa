@@ -16,7 +16,7 @@ module type S = sig
   module O : HardCaml.Interface.S
   module S : HardCaml.Interface.S
   val name : string
-  val methods : (string * Rule.unmeth) list
+  val methods : (string * Method.unmeth) list
   val rules : (string * (t I.t -> t S.t -> t S.t Rule.t)) list
   val r_spec : HardCaml.Signal.Types.register
   val clear : t I.t -> t S.t

@@ -30,7 +30,7 @@ module type S = sig
   module O : HardCaml.Interface.S
   module S : HardCaml.Interface.S
   val name : string
-  val methods : (string * Rule.unmeth) list
+  val methods : (string * Method.unmeth) list
   val rules : (string * (t I.t -> t S.t -> t S.t Rule.t)) list
   val r_spec : HardCaml.Signal.Types.register
   val clear : t I.t -> t S.t
@@ -48,18 +48,18 @@ module Make(G : S) = struct
   let n_methods = List.length G.methods
 
   let n_method_inputs =
-    List.fold_left (fun acc (_,m) -> acc + State.Arg.length m.Rule.arg_spec) 0 G.methods 
+    List.fold_left (fun acc (_,m) -> acc + State.Arg.length m.Method.arg_spec) 0 G.methods 
   
   let n_method_outputs = 
-    List.fold_left (fun acc (_,m) -> acc + State.Ret.length m.Rule.ret_spec) 0 G.methods 
+    List.fold_left (fun acc (_,m) -> acc + State.Ret.length m.Method.ret_spec) 0 G.methods 
 
   let methods = 
     let port io n' (n,b) = "method_" ^ io ^ "_" ^ n' ^ "_" ^ n, b in
     List.map (fun (n,m) -> 
       n,
       { m with
-        Rule.arg_spec = State.Arg.map_t (port "in" n) m.Rule.arg_spec; 
-        ret_spec = State.Ret.map_t (port "out" n) m.Rule.ret_spec }) 
+        Method.arg_spec = State.Arg.map_t (port "in" n) m.Method.arg_spec; 
+        ret_spec = State.Ret.map_t (port "out" n) m.Method.ret_spec }) 
     G.methods
 
   module I' = interface
@@ -80,7 +80,7 @@ module Make(G : S) = struct
       I'.{ t with
         method_en = List.map (fun (n,_) -> "method_en_" ^ n, 1) methods;
         method_in = List.concat @@ 
-          List.map (fun (_,m) -> State.Arg.to_list m.Rule.arg_spec) methods;
+          List.map (fun (_,m) -> State.Arg.to_list m.Method.arg_spec) methods;
       }
   end
 
@@ -90,7 +90,7 @@ module Make(G : S) = struct
       O'.{ t with
         method_vld = List.map (fun (n,_) -> "method_vld_" ^ n, 1) methods;
         method_out = List.concat @@ 
-          List.map (fun (_,m) -> State.Ret.to_list m.Rule.ret_spec) methods;
+          List.map (fun (_,m) -> State.Ret.to_list m.Method.ret_spec) methods;
       }
   end
 
@@ -105,13 +105,13 @@ module Make(G : S) = struct
       match e,m with
       | [], [] -> []
       | e::e', (n,m)::m' ->
-        let a, args = g (State.Arg.to_list m.Rule.arg_spec) args [] in
-        (n, { Rule.en=e; args=State.Arg.of_list a; spec=m }) :: f e' m' args
+        let a, args = g (State.Arg.to_list m.Method.arg_spec) args [] in
+        (n, { Method.en=e; args=State.Arg.of_list a; spec=m }) :: f e' m' args
       | _ -> failwith "imbalanced lists"
     in
     f i.I.method_en G.methods i.I.method_in
 
-  let f (i : HardCaml.Signal.Comb.t I.t) = 
+  let f i =
     let methods = build_methods i in
     let st_clear = Sl.to_state (G.clear i.I.i) in
     let i' = Il.to_state i.I.i in

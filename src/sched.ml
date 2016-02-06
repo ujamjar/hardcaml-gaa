@@ -2,7 +2,7 @@ open HardCaml.Signal.Types
 open HardCaml.Signal.Comb
 open State
 
-type state_map = Rule.state_sig * t UidMap.t
+type state_map = state_sig * t UidMap.t
 
 type sched_opt = [ `cf | `me | `sc ]
 

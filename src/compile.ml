@@ -131,6 +131,7 @@ module Build = struct
 
   let method_rules ~methods ~i ~st = 
     let open Rule in
+    let open Method in
     let meth (n,m) = 
       let rule, rets = m.spec.fn i st m.args in
       (n, {rule with guard = m.en}), (rule.guard, rets)
@@ -203,15 +204,45 @@ module Build = struct
     ignore @@ (List.map2 (fun (_,l) (_,r) -> l <== r) state st_reg);
     any_enabled, State.of_list st_reg
 
-  let compile 
+  let schedule
     ?(sched_opt=[`cf; `me; `sc])
     ?(me_rules=[])
-    ~r_spec ~st_clear ~methods ~rules ~i ~s = 
+    ~methods ~rules ~i ~s = 
     let state, rules, method_outputs = instantiate_rules ~methods ~rules ~i ~s in
     let dnr = Sched.DnR.make state rules in
     let pairs = Sched.pairs (List.mapi (fun i (n,_) -> n,i) rules) in
     let constraints = Sched.Constraints.make ~sched_opt ~me_rules dnr pairs in
+    state, rules, method_outputs, constraints
+
+  let print_constraints chan rules constraints = 
+    let open Sched.Constraints in
+    let b b = match Lazy.force b with true -> "\xe2\x9c\x93" | false -> "\xe2\x9c\x97" in
+    Printf.fprintf chan "| cf | me | sc12 | sc21 |\n";
+    Printf.fprintf chan "|-----------------------|\n";
+    List.iter (fun c ->
+      Printf.fprintf chan "| %s  | %s  | %s    |  %s   | %s -> %s\n" 
+        (b c.cf) (b c.me) (b c.sc12) (b c.sc21)
+        (fst (List.nth rules c.i1))
+        (fst (List.nth rules c.i2))
+    ) constraints;
+    Printf.fprintf chan "|-----------------------|%!\n"
+
+  let print_schedule chan rules sched = 
+    List.iteri (fun i g ->
+      Printf.fprintf chan "group %i\n" i;
+      List.iter (fun g -> Printf.fprintf chan "%s[%i] " (fst (List.nth rules g)) g) g;
+      Printf.fprintf chan "\n%!") sched
+
+  let compile 
+    ?(sched_opt=[`cf; `me; `sc])
+    ?(me_rules=[])
+    ~r_spec ~st_clear ~methods ~rules ~i ~s = 
+    let state, rules, method_outputs, constraints = 
+      schedule ~sched_opt ~me_rules ~methods ~rules ~i ~s
+    in
+    print_constraints stdout rules constraints;
     let scheduling_groups = Sched.Graph.conflict_graph (List.length rules) constraints in
+    print_schedule stdout rules scheduling_groups;
     let rules = Array.of_list rules in
     let encoders = List.map (Encoder.enumerated_encoder rules constraints) scheduling_groups in
     let guards = rule_enables rules encoders in

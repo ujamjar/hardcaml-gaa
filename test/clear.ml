@@ -19,20 +19,22 @@ module Clear = struct
   module S = interface x[8] y[8] end
   let s' = S.(map (fun _ -> empty) t)
 
-  let rules i = 
+  let methods = []
+
+  let rules = 
     let open S in
     [
-      "clear", (fun s -> {
+      "clear", (fun i s -> {
         guard  = i.I.clear;
         action = { x = i.I.x; y = i.I.y }
       });
           
-      "runx", (fun s -> {
+      "runx", (fun i s -> {
         guard  = vdd;
         action = { s' with x = s.x +:. 1 };
       });
 
-      "runy", (fun s -> {
+      "runy", (fun i s -> {
         guard  = vdd;
         action = { s' with y = s.y -:. 1 };
       });
@@ -54,7 +56,8 @@ end
 module X = Make(Clear)
 module S = Cyclesim.Api
 
-let () = X.sim (fun ~sim ~clear ~enable ~running ~i ~o ->
+let () = X.sim (fun ~sim ~clear ~enable ~i ~o ->
+  let i = i.X.G.I.i in
   S.reset sim;
   enable := B.vdd;
   S.cycle sim;
