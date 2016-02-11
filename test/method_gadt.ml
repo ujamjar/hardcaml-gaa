@@ -129,6 +129,8 @@ end
 
 module Rmethod : sig
   
+  exception Parameter_validation of string * int * int
+
   val (!) : param -> signal Return.t
 
   val (@) : 'a Return.t -> 'b Return.t -> ('a * 'b) Return.t
@@ -159,6 +161,8 @@ module Rmethod : sig
 
 end = struct
 
+  exception Parameter_validation of string * int * int
+
   let (!) = Return.(!)
   let (@) = Return.(@)
   let (@->) = Func.(@->)
@@ -168,12 +172,13 @@ end = struct
 
   let define : type a b. (a,b) Func.t -> a -> (a,b) defn = fun t f -> t,f
 
-  (* this could be [let rec call : type a b. (a,b) Func.t * a -> a = fun (t, f) -> f].
-    with this we can add parameter validation *)
+  (* this could be [let call (_, f) -> f].
+     however, with this we can have parameter validation *)
   let rec call : type a b. (a,b) defn -> a = fun (t, f) ->
+    let valid (n,b) s = if width s <> b then raise (Parameter_validation(n, b, width s)) in
     match t with
-    | Func.R p -> f 
-    | Func.A(a,b) -> (fun p -> call (b,(f p))) 
+    | Func.R p -> Return.map (fun p s -> valid p s; s) p f
+    | Func.A(a,b) -> (fun p -> valid a p; call (b,(f p)))
 
   type inst_env = 
     {
