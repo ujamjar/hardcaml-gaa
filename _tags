@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 9596130e1e77ce18a27a39b2752ff985)
+# DO NOT EDIT (digest: c5147a61fa0161f95fab2e451677354f)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -17,6 +17,7 @@ true: annot, bin_annot
 # Library HardCamlGaa
 "src/HardCamlGaa.cmxs": use_HardCamlGaa
 "src/graph_ex.cmx": for-pack(HardCamlGaa)
+"src/lub.cmx": for-pack(HardCamlGaa)
 "src/state.cmx": for-pack(HardCamlGaa)
 "src/rule.cmx": for-pack(HardCamlGaa)
 "src/method.cmx": for-pack(HardCamlGaa)
