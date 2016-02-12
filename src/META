@@ -1,8 +1,8 @@
 # OASIS_START
-# DO NOT EDIT (digest: b15075069709d9401e0f97821e9922e3)
+# DO NOT EDIT (digest: 67e6768c999904742c1ca3b74d1d7524)
 version = "0.1"
 description = "Guarded Atomic Actions for HardCaml"
-requires = "bytes ocamlgraph hardcaml"
+requires = "bytes ocamlgraph hardcaml hardcaml-waveterm.lterm"
 archive(byte) = "HardCamlGaa.cma"
 archive(byte, plugin) = "HardCamlGaa.cma"
 archive(native) = "HardCamlGaa.cmxa"

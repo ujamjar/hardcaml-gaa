@@ -1,76 +1,84 @@
 module IntSet : Set.S with type elt = int
 
-module Encoder : sig
+module Make(T : Typ.S) : sig
+  
+  open HardCaml.Signal.Types
 
-  type t = [ `priority of int list | `enum of int list * int list array ]
+  module Schedule : module type of Sched.Make(T)
 
-  val enumerated_encoder : Rule.inst array -> Sched.Constraints.t list -> int list -> t
+  module Encoder : sig
 
-  open HardCaml.Signal.Comb
+    type t = [ `priority of int list | `enum of int list * int list array ]
 
-  val const_of_clique : int list -> int list -> t
+    val enumerated_encoder : T.inst_rule array -> Schedule.Constraints.t list -> int list -> t
 
-  val pri_en : t list -> t list
+    open HardCaml.Signal.Comb
 
-  val pri_en_tree : t list -> t list
+    val const_of_clique : int list -> int list -> t
 
-  val pri_mux : (t * t) list -> t * t
+    val pri_en : t list -> t list
 
-end
+    val pri_en_tree : t list -> t list
 
-module Build : sig
+    val pri_mux : (t * t) list -> t * t
 
-  open HardCaml.Signal
+  end
 
-  val state : st_spec:State.state_spec -> Sched.state_map
+  module Build : sig
 
-  val method_rules : 
-    methods:(string * Method.meth) list -> i:State.inp_sig -> st:State.state_sig -> 
-    (string * Rule.inst) list * (Comb.t * State.ret_sig) list
+    open HardCaml.Signal
 
-  val instantiate_rules : 
-    methods:(string * Method.meth) list -> rules:(string * Rule.unrule) list ->
-    i:State.inp_sig -> s:State.state_spec ->
-    Sched.state_map * (string * Rule.inst) list * (Comb.t * State.ret_sig) list
+    val state : unit -> Schedule.state_map
 
-  val rule_enables : 
-    rules:(string * Rule.inst) array -> 
-    sched:Encoder.t list -> 
-    (int * Comb.t) list list
+    val method_rules : 
+      methods:(string * T.inst_meth) list -> i:signal T.I.t -> s:signal T.S.t -> 
+      (string * T.inst_rule) list * (Comb.t * State.ret_sig) list
 
-  val create_register_state :
-    r_spec:Types.register -> 
-    st_clear:State.state_sig -> 
-    state:Sched.state_map -> 
-    rules:(string * Rule.inst) array ->
-    guards:(int * Comb.t) list list -> 
-    Comb.t * State.state_sig
+    val instantiate_rules : 
+      methods:(string * T.inst_meth) list -> rules:(string * T.uninst_rule) list ->
+      i:signal T.I.t -> 
+      Schedule.state_map * (string * T.inst_rule) list * (Comb.t * State.ret_sig) list
 
-  val schedule : 
-    ?sched_opt:Sched.sched_opt list -> ?me_rules:string list list ->
-    methods:(string * Method.meth) list -> rules:(string * Rule.unrule) list ->
-    i:State.inp_sig -> s:State.state_spec -> 
-    Sched.state_map * 
-    (string * Rule.inst) list * 
-    (Comb.t * State.ret_sig) list * 
-    Sched.Constraints.t list
+    val rule_enables : 
+      rules:(string * T.inst_rule) array -> 
+      sched:Encoder.t list -> 
+      (int * Comb.t) list list
 
-  val print_constraints : 
-    out_channel ->
-    (string * Rule.inst) list ->
-    Sched.Constraints.t list -> unit
+    val create_register_state :
+      r_spec:Types.register -> 
+      st_clear:signal T.S.t -> 
+      state:Schedule.state_map -> 
+      rules:(string * T.inst_rule) array ->
+      guards:(int * Comb.t) list list -> 
+      Comb.t * signal T.S.t
 
-  val print_schedule : 
-    out_channel ->
-    (string * Rule.inst) list ->
-    int list list -> unit
+    val schedule : 
+      ?sched_opt:Sched.sched_opt list -> ?me_rules:string list list ->
+      methods:(string * T.inst_meth) list -> rules:(string * T.uninst_rule) list ->
+      i:signal T.I.t -> 
+      Schedule.state_map * 
+      (string * T.inst_rule) list * 
+      (Comb.t * State.ret_sig) list * 
+      Schedule.Constraints.t list
 
-  val compile : 
-    ?sched_opt:Sched.sched_opt list -> ?me_rules:string list list ->
-    r_spec:Types.register -> st_clear:State.state_sig -> 
-    methods:(string * Method.meth) list -> rules:(string * Rule.unrule) list ->
-    i:State.inp_sig -> s:State.state_spec -> 
-    ((Comb.t * State.state_sig) * (Comb.t * State.ret_sig) list)
+    val print_constraints : 
+      out_channel ->
+      (string * T.inst_rule) list ->
+      Schedule.Constraints.t list -> unit
+
+    val print_schedule : 
+      out_channel ->
+      (string * T.inst_rule) list ->
+      int list list -> unit
+
+    val compile : 
+      ?sched_opt:Sched.sched_opt list -> ?me_rules:string list list ->
+      r_spec:Types.register -> st_clear:signal T.S.t -> 
+      methods:(string * T.inst_meth) list -> rules:(string * T.uninst_rule) list ->
+      i:signal T.I.t -> 
+      ((Comb.t * signal T.S.t) * (Comb.t * State.ret_sig) list)
+
+  end
 
 end
 

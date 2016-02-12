@@ -11,23 +11,14 @@ module type S = sig
   val fold_left : ('a -> (string * 'b) -> 'a) -> 'a -> 'b t -> 'a
 end
 
-module State : S
-module Inp : S
-module Out : S
 module Arg : S
 module Ret : S
 
-type state_spec = int State.t
-type inp_spec = int Inp.t
-type out_spec = int Out.t
 type arg_spec = int Arg.t
 type ret_spec = int Ret.t
 
 open HardCaml.Signal
 
-type state_sig = Comb.t State.t
-type inp_sig = Comb.t Inp.t
-type out_sig = Comb.t Out.t
 type arg_sig = Comb.t Arg.t
 type ret_sig = Comb.t Ret.t
 

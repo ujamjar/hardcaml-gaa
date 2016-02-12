@@ -1,86 +1,90 @@
 open HardCaml.Signal.Types
 open HardCaml.Signal.Comb
 
-type state_map = State.state_sig * t UidMap.t
-
 type sched_opt = [ `cf | `me | `sc ]
 
 module StrSet : Set.S with type elt = string
 
 val pairs : 'a list -> ('a * 'a) list
 
-(* domain and range of a rule *)
-module DnR : sig
+module Make(T : Typ.S) : sig
 
-  type t = 
-    {
-      domain : UidSet.t Lazy.t;
-      range : UidSet.t Lazy.t;
-    }
+  type state_map = (string * int * signal) T.S.t * t UidMap.t
 
-  val domain_of_expr : state_map -> UidSet.t -> HardCaml.Signal.Comb.t -> UidSet.t
+  (* domain and range of a rule *)
+  module DnR : sig
 
-  val domain_of_guard : state_map -> Rule.inst -> UidSet.t
+    type t = 
+      {
+        domain : UidSet.t Lazy.t;
+        range : UidSet.t Lazy.t;
+      }
 
-  val domain_of_action : state_map -> Rule.inst -> UidSet.t
+    val domain_of_expr : state_map -> UidSet.t -> HardCaml.Signal.Comb.t -> UidSet.t
 
-  val domain : state_map -> Rule.inst -> UidSet.t
+    val domain_of_guard : state_map -> T.inst_rule -> UidSet.t
 
-  val range : state_map -> Rule.inst -> UidSet.t
+    val domain_of_action : state_map -> T.inst_rule -> UidSet.t
 
-  val make : state_map -> ('a * Rule.inst) list -> t array
+    val domain : state_map -> T.inst_rule -> UidSet.t
 
-end
+    val range : state_map -> T.inst_rule -> UidSet.t
 
-(* rule constraints *)
-module Constraints : sig
+    val make : state_map -> ('a * T.inst_rule) list -> t array
 
-  type t = 
-    {
-      i1 : int; (* rule indices *)
-      i2 : int;
-      cf : bool Lazy.t; (* constraints *)
-      me : bool Lazy.t;
-      sc12 : bool Lazy.t;
-      sc21 : bool Lazy.t;
-    }
+  end
 
-  type fn = DnR.t -> DnR.t -> bool
+  (* rule constraints *)
+  module Constraints : sig
 
-  val conflict_free : fn
+    type t = 
+      {
+        i1 : int; (* rule indices *)
+        i2 : int;
+        cf : bool Lazy.t; (* constraints *)
+        me : bool Lazy.t;
+        sc12 : bool Lazy.t;
+        sc21 : bool Lazy.t;
+      }
 
-  val mutually_exclusive : StrSet.t list -> string -> string -> fn
+    type fn = DnR.t -> DnR.t -> bool
 
-  val sequentially_composable : fn
+    val conflict_free : fn
 
-  val make : 
-    sched_opt:sched_opt list -> me_rules:string list list -> 
-    DnR.t array -> ((string*int) * (string*int)) list -> t list
+    val mutually_exclusive : StrSet.t list -> string -> string -> fn
 
-  val is_parallel : t -> bool
-  val not_parallel : t -> bool
+    val sequentially_composable : fn
 
-end
+    val make : 
+      sched_opt:sched_opt list -> me_rules:string list list -> 
+      DnR.t array -> ((string*int) * (string*int)) list -> t list
 
-module Graph : sig
+    val is_parallel : t -> bool
+    val not_parallel : t -> bool
 
-  module type G = Graph.Sig.P  
-    with type V.t = int
-    and type V.label = int 
-    and type E.t = int * int
-	  and type E.label = unit
+  end
 
-  module G : G
-  module D : G
+  module Graph : sig
 
-  val connected : G.t -> int list list
-  val cliques : G.t -> int list list
+    module type G = Graph.Sig.P  
+      with type V.t = int
+      and type V.label = int 
+      and type E.t = int * int
+      and type E.label = unit
 
-  val gviz : string -> G.t -> unit
+    module G : G
+    module D : G
 
-  val build_graph : ?show:string -> int -> Constraints.t list -> (Constraints.t -> bool) -> G.t
+    val connected : G.t -> int list list
+    val cliques : G.t -> int list list
 
-  val conflict_graph : int -> Constraints.t list -> int list list
+    val gviz : string -> G.t -> unit
+
+    val build_graph : ?show:string -> int -> Constraints.t list -> (Constraints.t -> bool) -> G.t
+
+    val conflict_graph : int -> Constraints.t list -> int list list
+
+  end
 
 end
 

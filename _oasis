@@ -15,9 +15,9 @@ Library HardCamlGaa
   Path:          src
   Findlibname:   hardcaml-gaa
   Pack:          true
-  Modules:       Graph_ex, Lub, State, Rule, Method, Sched, Compile, Module
-  BuildDepends:  bytes, ocamlgraph,hardcaml,hardcaml.syntax
-  XMETARequires: bytes, ocamlgraph,hardcaml
+  Modules:       Graph_ex, Lub, State, Typ, Sched, Compile, Module
+  BuildDepends:  bytes, ocamlgraph,hardcaml,hardcaml-waveterm.lterm,hardcaml.syntax
+  XMETARequires: bytes, ocamlgraph,hardcaml,hardcaml-waveterm.lterm
 
 SourceRepository master
   Type:     git
