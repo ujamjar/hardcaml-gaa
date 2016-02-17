@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 345f4f005f7596046e19a108db3306a7)
+# DO NOT EDIT (digest: 689e33850d8c04bbd81bfa4ff80ec7bb)
 Graph_ex
 Lub
 State
@@ -7,4 +7,5 @@ Typ
 Sched
 Compile
 Module
+Module2
 # OASIS_STOP
