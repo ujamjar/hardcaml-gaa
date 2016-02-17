@@ -57,6 +57,12 @@ type param = string * int
 type ienv = param -> signal
 type oenv = param -> signal -> signal
 
+type 'a rule = 
+  {
+    guard : signal;
+    action : 'a;
+  }
+
 module Return : sig
   
   type _ t = private
@@ -99,29 +105,29 @@ end = struct
 
 end
 
-module Func : sig
+module Func(R : sig type 'a t end) : sig
 
   type (_,_) t = private
-    | R : 'a Return.t -> ('a,'a) t 
+    | R : 'a R.t -> ('a,'a) t 
     | A : param * ('a,'b) t -> (signal -> 'a, 'b) t
 
   val ( @-> ) : param -> ('a, 'b) t -> (signal -> 'a, 'b) t 
   
-  val returning : 'a Return.t -> ('a, 'a) t
+  val returning : 'a R.t -> ('a, 'a) t
 
-  val get_return : ('a,'b) t -> 'b Return.t
+  val get_return : ('a,'b) t -> 'b R.t
 
 end = struct
 
   type (_,_) t = 
-    | R : 'a Return.t -> ('a,'a) t 
+    | R : 'a R.t -> ('a,'a) t 
     | A : param * ('a,'b) t -> (signal -> 'a, 'b) t
 
   let (@->) a f = A(a, f)
 
   let returning p = R p
 
-  let rec get_return : type a b. (a,b) t -> b Return.t = function
+  let rec get_return : type a b. (a,b) t -> b R.t = function
     | R p -> p
     | A(a,b) -> get_return b
 
@@ -129,6 +135,8 @@ end
 
 module Rmethod : sig
   
+  module Func : module type of Func(Return)
+
   exception Parameter_validation of string * int * int
 
   val (!) : param -> signal Return.t
@@ -160,6 +168,8 @@ module Rmethod : sig
   val circuit : string -> ('a,'b) defn -> HardCaml.Circuit.t
 
 end = struct
+
+  module Func = Func(Return)
 
   exception Parameter_validation of string * int * int
 
@@ -270,4 +280,29 @@ module Example = struct
   let tup3_circ = circuit "tup3" tup3_defn
 
 end
+
+module S = interface a[8] b[4] end
+
+module Amethod = struct
+
+  module R = struct
+    type _ t = Z : signal S.t t
+  end
+  module Func = Func(R)
+
+  exception Parameter_validation of string * int * int
+
+  let (@->) = Func.(@->)
+  let returning = 
+    let z = S.(map (fun (n,b) -> HardCaml.Signal.Comb.zero b) t) in
+    fun () -> Func.returning Z
+
+  type ('a,'b) defn = ('a,'b) Func.t * 'a
+
+  let define : type a b. (a,b) Func.t -> a -> (a,b) defn = fun t f -> t,f
+
+end
+
+open Example
+open Amethod
 

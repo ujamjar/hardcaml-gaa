@@ -4,6 +4,10 @@ module I = interface x_in[8] y_in[8] end
 module O = interface result[8] end
 module S = interface x[8] y[8] end
 
+let zero' (_,b) = HardCaml.Signal.Comb.zero b
+let i' = I.(map zero' t)
+let s' = S.(map zero' t)
+
 module Gaa = Module.Make(I)(S)(O)(struct
   include Module.Default_params(I)(S)(O)
   let name = "gcd"
@@ -30,6 +34,20 @@ let () =
     action = { x = s.y; y = s.x };
   })
 
+let ready = 
+  Gaa.T.Rmethod2.(define "ready" (returning !("result",8))) 
+    (fun ~i ~s -> 
+      {
+        Gaa.T.guard = vdd;
+        action = s.S.x;
+      })
+
+let start = 
+  Gaa.T.Amethod.(define "start" (("x",8) @-> ("y",8) @-> returning ())) 
+    (fun ~i ~s -> {
+      Gaa.T.guard = vdd;
+      action = (fun x y -> { S.x=x; y=y });
+    })
 
 module X = Gaa.Top ()
 
@@ -52,3 +70,11 @@ let tb ~sim ~clear ~enable ~i ~o ~o' =
         S.cycle sim
       done)
     [ (15,10); (9,3); (12,144) ]
+
+open HardCaml.Signal.Comb
+open Gaa.T
+
+let a, b, c = ("a",1), ("b",1),("c",1)
+
+
+
