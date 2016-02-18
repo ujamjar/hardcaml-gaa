@@ -15,17 +15,39 @@ module Gcd = struct
   let name = "gcd"
 
   let sub = API.rule ~name:"sub" (fun ~i ~s -> {
-    Module2.guard  = ((s.x >=: s.y) &: (s.y <>:. 0));
+    Module2.guard = ((s.x >=: s.y) &: (s.y <>:. 0));
     action = { x = (s.x -: s.y); y = empty; };
   })
 
   let swap = API.rule ~name:"swap" (fun ~i ~s -> {
-    Module2.guard  = ((s.x <: s.y) &: (s.y <>:. 0));
+    Module2.guard = ((s.x <: s.y) &: (s.y <>:. 0));
     action = { x = s.y; y = s.x };
   })
 
+  let ready_t = API.T.Rmethod2.(returning !("result",8))
+  let ready = API.rmethod ~name:"ready" ready_t (fun ~i ~s -> {
+    Module2.guard = vdd;
+    action = s.S.x;
+  })
+
+  let start_t = API.T.Amethod.(("x",8) @-> ("y",8) @-> returning ()) 
+  let start = API.amethod ~name:"start" start_t (fun ~i ~s -> {
+    Module2.guard = vdd;
+    action = (fun x y -> { S.x=x; y=y });
+  })
+
+  let start100_t = API.T.Amethod.(("x",8) @-> returning ()) 
+  let start100 = API.amethod ~name:"start100" start100_t (fun ~i ~s -> {
+    Module2.guard = vdd;
+    action = (fun x -> { S.x=x; y=consti 8 100 });
+  })
+
   let rules = [ sub; swap ]
-  let methods = []
+  let methods = [
+    ready#inst;
+    start#inst;
+    start100#inst;
+  ]
 
   let clear i = { S.x = i.I.x_in; y = i.I.y_in }
   let output i s = O.{ result = s.S.x }

@@ -132,7 +132,7 @@ module Make(T : Typ.S) = struct
     let method_rules ~methods ~i ~s = 
       let meth (n,m) = 
         let rule, rets = T.(m.spec.fn ~i ~s ~a:m.args) in
-        (n, {rule with T.guard = m.T.en}), (rule.T.guard, rets)
+        (n, {rule with Typ.guard = m.T.en}), (rule.Typ.guard, rets)
       in
       let r = List.map meth methods in
       List.map fst r, List.map snd r
@@ -148,7 +148,7 @@ module Make(T : Typ.S) = struct
 
     let rule_enables ~rules ~sched = 
       let get_enables gr = 
-        List.map (fun i -> let n,r = Array.get rules i in r.T.guard -- ("__"^n^"_g")) gr 
+        List.map (fun i -> let n,r = Array.get rules i in r.Typ.guard -- ("__"^n^"_g")) gr 
       in
       try
         List.map
@@ -184,7 +184,7 @@ module Make(T : Typ.S) = struct
         T.S.(map2 (fun st a -> if a = Signal_empty then st else (e,a)::st) st a)
       in
       let st_mux = (* state updates in reverse priority order *)
-        Array.fold_left (fun st (n,r,e) -> merge_st st r.T.action e) 
+        Array.fold_left (fun st (n,r,e) -> merge_st st r.Typ.action e) 
           (T.S.map (fun _ -> []) T.S.t)
           rules
       in

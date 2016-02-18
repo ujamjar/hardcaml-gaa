@@ -1,6 +1,7 @@
 open HardCaml
 
-type 'a rule = {
+(* re-export *)
+type 'a rule = 'a Typ.rule = {
   guard : Signal.Comb.t;
   action : 'a;
 }
@@ -15,6 +16,14 @@ let inst_id = mk_id ()
 (* global name mangler *)
 let mangler = Circuit.Mangler.make []
 let mangle s = Circuit.Mangler.mangle mangler s
+
+module Method_inst = struct
+  open HardCaml.Signal.Types
+  type params = (string * int) list
+  type ('a,'b) t = 
+    | R of string * params * params * 'a
+    | A of string * params * 'b
+end
 
 module API
   (I : Interface.S)
@@ -35,9 +44,25 @@ module API
 
   let rule ?(name="") fn = name, fn
 
-  let rmethod ?(name="") typ meth = name, typ, meth
+  module T = Typ.Make(I)(S)(O)
 
-  let amethod ?(name="") typ meth = name, typ, meth
+  let rmethod ?(name="") typ meth = 
+    let (name,typ,fn) as defn = T.Rmethod2.define name typ meth in
+    object
+        method defn = defn
+        method inst = 
+          let p,r = T.Rmethod2.params defn in
+          Method_inst.R(name, p, r, (fun ~i ~s -> T.Rmethod2.inst ~i ~s defn))
+    end
+
+  let amethod ?(name="") typ meth = 
+    let (name,typ,fn) as defn = T.Amethod.define name typ meth in
+    object
+        method defn = defn
+        method inst = 
+          let p = T.Amethod.params defn in
+          Method_inst.A(name, p, (fun ~i ~s -> T.Amethod.inst ~i ~s defn))
+    end
 
 end
 
@@ -53,7 +78,13 @@ module type Modl = sig
   val sched_opt : Sched.sched_opt list
   val me_rules : string list list
   val rules : (string * (i:t I.t -> s:t S.t -> t S.t rule)) list
-  val methods : unit list (* XXX *)
+  open HardCaml.Signal.Types
+  val methods :
+    ((i:signal I.t -> s:signal S.t -> 
+        ((((string*int)*signal) list) * ((string*int)*signal) list) rule),
+     (i:signal I.t -> s:signal S.t -> 
+        ((((string*int)*signal) list) * signal S.t) rule))
+    Method_inst.t list 
 end
 
 module Top(M : Modl) = struct
@@ -61,21 +92,99 @@ module Top(M : Modl) = struct
   module T = Typ.Make(M.I)(M.S)(M.O)
   module Compile = Compile.Make(T)  (* HACKED *)
 
-  let hack_rule (n,r) = (* HACKED *)
+  (* T.rule <> Module2.rule...FIXME *)
+  (*let hack_rule (n,r) = (* HACKED *)
     n, (fun ~i ~s ->
       let r = r ~i ~s in
-      { T.guard = r.guard; action = r.action })
+      { Typ.guard = r.guard; action = r.action })*)
+
+  (* ... current implementation ... 
+  type uninst_meth = {
+    arg_spec : State.arg_spec;
+    ret_spec : State.ret_spec;
+    fn : i:signal I.t -> s:signal S.t -> a:State.arg_sig -> (inst_rule * State.ret_sig);
+  }
+
+  type inst_meth = {
+    en : signal;
+    args : State.arg_sig;
+    spec : uninst_meth;
+  }
+  *)
+
+  let show_method = 
+    let open Printf in
+    function
+      | Method_inst.R(n,p,r,_) -> begin
+        printf "rmethod %s: " n;
+        List.iter (fun (n,b) -> printf "%s[%i] -> " n b) p;
+        printf "(%s)\n" 
+          (String.concat " * " 
+            (List.map (fun (n,b) -> sprintf "%s[%i]" n b) r))
+      end
+      | Method_inst.A(n,p,_) -> begin
+        printf "amethod %s: " n;
+        List.iter (fun (n,b) -> printf "%s[%i] -> " n b) p;
+        printf "()\n"
+      end
+
+  let methods m = (* XXX refactor types *)
+    let open HardCaml.Signal.Comb in
+    List.map (function
+      | Method_inst.R(n,p,r,f) -> 
+        let n = "rmethod_" ^ n in
+        let en = input (n ^ "_EN") 1 in
+        let ps = List.map (fun (n',b) -> n',input (n ^ "_arg_" ^ n') b) p in
+        n, {
+          T.en = en;
+          args = State.Arg.of_list ps;
+          spec = 
+            {
+              T.arg_spec = State.Arg.of_list p;
+              ret_spec = State.Ret.of_list r;
+              fn = 
+                (fun ~i ~s ~a ->
+                  (* instantiate the method *)
+                  let r = f ~i ~s in
+                  (* attach inputs *)
+                  List.iter2 (fun (_,i) (_,j) -> i <== j) (fst r.action) ps;
+                  { r with action=M.S.(map (fun _ -> empty) t) },
+                  State.Ret.of_list (List.map (fun ((n,_),s) -> n,s) (snd r.action)));
+            };
+        }
+      | Method_inst.A(n,p,f) ->
+        let n = "amethod_" ^ n in
+        let en = input (n ^ "_EN") 1 in
+        let ps = List.map (fun (n',b) -> n',input (n ^ "_" ^ n' ^ "_ARG") b) p in
+        n, {
+          T.en = en;
+          args = State.Arg.of_list ps;
+          spec = 
+            {
+              T.arg_spec = State.Arg.of_list p;
+              ret_spec = State.Ret.of_list [];
+              fn = 
+                (fun ~i ~s ~a -> 
+                  (* instantiate the method *)
+                  let r = f ~i ~s in
+                  (* attach inputs *)
+                  List.iter2 (fun (_,i) (_,j) -> i <== j) (fst r.action) ps;
+                  { r with action=snd r.action; }, 
+                  State.Ret.of_list []);
+            };
+        }) m
 
   let f i = 
     let st_clear = M.clear i in
+    List.iter show_method M.methods;
     let (en,s),metho = 
       Compile.Build.compile 
         ~sched_opt:M.sched_opt
         ~me_rules:M.me_rules
         ~r_spec:M.r_spec 
         ~st_clear
-        ~methods:[]
-        ~rules:(List.map hack_rule M.rules) (* HACKED *)
+        ~methods:(methods M.methods)
+        ~rules:M.rules
         ~i:i
     in
     M.output i s

@@ -1,16 +1,18 @@
+open HardCaml.Signal.Types
+
+type 'a rule = 
+  {
+    guard : signal;
+    action : 'a;
+  }
+
 module type S = sig
-  open HardCaml.Signal.Types
 
   module I : HardCaml.Interface.S 
   module S : HardCaml.Interface.S 
   module O : HardCaml.Interface.S 
 
   (* rules *)
-  type 'a rule = 
-    {
-      guard : signal;
-      action : 'a;
-    }
 
   type uninst_rule = i:signal I.t -> s:signal S.t -> (signal S.t rule)
 
@@ -65,7 +67,7 @@ module type S = sig
     val get_return : ('a,'b) t -> 'b R.t
 
   end 
-
+(*
   module Rmethod : sig
     
     module Func : module type of Func(Return)
@@ -100,7 +102,7 @@ module type S = sig
 *)
 
   end 
-
+*)
   module Rmethod2 : sig
     
     module Func : module type of Func(Return)
@@ -124,6 +126,8 @@ module type S = sig
     (*val call : ('a,'b) defn -> 'a fn*)
 
     type rinst = ((string * int) * signal) list
+
+    val params : ('a,'b) defn -> param list * param list
 
     val inst : i:signal I.t -> s:signal S.t -> ('a,'b) defn -> (rinst * rinst) rule
 
@@ -155,6 +159,8 @@ module type S = sig
 
     val define : string -> ('a,'b,'c,'d) func -> 'a fn -> ('a,'b,'c,'d) defn
 
+    val params : ('a,'b,'c,'d) defn -> param list 
+
     val inst : i:signal I.t -> s:signal S.t -> ('a,R.defn,'c,'d) defn -> (R.inst * R.defn) rule
 
     val call : ('a,'b,'c,R.inst) defn -> 'c
@@ -172,13 +178,6 @@ module Make(I : HardCaml.Interface.S)
   module I = I
   module S = S
   module O = O
-
-  (* rules *)
-  type 'a rule = 
-    {
-      guard : signal;
-      action : 'a;
-    }
 
   type uninst_rule = i:signal I.t -> s:signal S.t -> (signal S.t rule)
 
@@ -246,7 +245,7 @@ module Make(I : HardCaml.Interface.S)
       | A(a,b) -> get_return b
 
   end
-
+(*
   module Rmethod = struct
 
     module Func = Func(Return)
@@ -290,7 +289,7 @@ module Make(I : HardCaml.Interface.S)
     let returns (t,f) r = Return.list (Func.get_return t) r
 
   end
-
+*)
   module Rmethod2 = struct
 
     module Func = Func(Return)
@@ -324,6 +323,12 @@ module Make(I : HardCaml.Interface.S)
     let returns t r = Return.list (Func.get_return t) r
 
     type rinst = ((string * int) * signal) list
+
+    let rec params : type a b. (a,b) Func.t -> param list -> param list * param list = fun t l ->
+      match t with
+      | Func.R p -> List.rev l, Return.params p
+      | Func.A(a, b) -> params b (a::l)
+    let params (_,t,_) = params t []
 
     (* instantiate rule, apply wires to inputs, collect outputs and return them *)
     let rec inst : type a b. (a,b) Func.t * a -> rinst -> rinst * rinst = fun (t,f) l ->
@@ -379,6 +384,12 @@ module Make(I : HardCaml.Interface.S)
       | Func.R p -> f
       | Func.A(a,b) -> (fun p -> eval (b,(f p)))
     let eval (_,(t,_),f) = eval (t,f)*)
+
+    let rec params : type a b. (a,b) Func.t -> param list -> param list = fun t l ->
+      match t with
+      | Func.R _ -> List.rev l
+      | Func.A(a,b) -> params b (a::l)
+    let params (_,(t,_),_) = params t []
 
     (* create wires for input parameters and instantiate the action body.  return
      * both as part of the rule action *)

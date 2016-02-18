@@ -1,16 +1,16 @@
+open HardCaml.Signal.Types
+
+type 'a rule = 
+  {
+    guard : signal;
+    action : 'a;
+  }
+
 module type S = sig
-  open HardCaml.Signal.Types
 
   module I : HardCaml.Interface.S 
   module S : HardCaml.Interface.S 
   module O : HardCaml.Interface.S 
-
-  (* rules *)
-  type 'a rule = 
-    {
-      guard : signal;
-      action : 'a;
-    }
 
   type uninst_rule = i:signal I.t -> s:signal S.t -> (signal S.t rule)
 
@@ -65,7 +65,7 @@ module type S = sig
     val get_return : ('a,'b) t -> 'b R.t
 
   end 
-
+(*
   module Rmethod : sig
    
     module Func : module type of Func(Return)
@@ -99,7 +99,7 @@ module type S = sig
     val returns : ('a,'b) defn -> 'b -> signal list
 *)
   end 
-
+*)
   module Rmethod2 : sig
    
     module Func : module type of Func(Return)
@@ -123,6 +123,8 @@ module type S = sig
     (*val call : ('a,'b) defn -> 'a fn*)
 
     type rinst = ((string * int) * signal) list
+
+    val params : ('a,'b) defn -> param list * param list
 
     val inst : i:signal I.t -> s:signal S.t -> ('a,'b) defn -> (rinst * rinst) rule
 
@@ -152,6 +154,8 @@ module type S = sig
     type ('a,'b,'c,'d) defn = string * ('a,'b,'c,'d) func * 'a fn
 
     val define : string -> ('a,'b,'c,'d) func -> 'a fn -> ('a,'b,'c,'d) defn
+
+    val params : ('a,'b,'c,'d) defn -> param list 
 
     val inst : i:signal I.t -> s:signal S.t -> ('a,R.defn,'c,'d) defn -> (R.inst * R.defn) rule
 

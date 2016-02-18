@@ -34,11 +34,11 @@ module Make(T : Typ.S) = struct
       | _ -> 
         UidSet.add (uid expr) set
 
-    let domain_of_guard state rule = domain_of_expr state UidSet.empty rule.T.guard
+    let domain_of_guard state rule = domain_of_expr state UidSet.empty rule.Typ.guard
 
     let domain_of_action state rule = 
       List.fold_left (fun s e -> domain_of_expr state s e) UidSet.empty 
-        (T.S.to_list rule.T.action)
+        (T.S.to_list rule.Typ.action)
 
     let domain state rule = 
       UidSet.union
@@ -51,7 +51,7 @@ module Make(T : Typ.S) = struct
         else UidSet.add (uid w) set
       in
       List.fold_left add_to_range UidSet.empty 
-        T.S.(to_list @@ map2 (fun (_,_,a) b -> a,b) state rule.T.action)
+        T.S.(to_list @@ map2 (fun (_,_,a) b -> a,b) state rule.Typ.action)
 
     let make state rules = 
       Array.of_list @@ List.map 
